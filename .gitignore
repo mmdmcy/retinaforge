@@ -1,0 +1,40 @@
+# Local machine and assistant state
+.env
+.env.*
+!.env.example
+.codex/
+.claude/
+AGENTS.md
+private/
+docs/private/
+state/
+captures/
+reports/
+logs/
+*.log
+*.sqlite
+*.db
+
+# Credentials and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Kernel/package build outputs
+build/
+out/
+*.deb
+*.ddeb
+*.dsc
+*.changes
+*.buildinfo
+*.tar.xz
+*.tar.zst
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*~
