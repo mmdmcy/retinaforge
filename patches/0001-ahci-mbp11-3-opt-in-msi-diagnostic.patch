@@ -1,0 +1,39 @@
+diff --git a/drivers/ata/ahci.c b/drivers/ata/ahci.c
+index 1d73a5337..95babd39c 100644
+--- a/drivers/ata/ahci.c
++++ b/drivers/ata/ahci.c
+@@ -692,6 +692,18 @@ MODULE_PARM_DESC(mobile_lpm_policy,
+ 		 "Default LPM policy. Despite its name, this parameter applies "
+ 		 "to all chipsets, including desktop and server chipsets");
+ 
++/*
++ * Local, opt-in diagnostic only. The upstream 144d:1600 entry disables MSI
++ * because MSI combined with NCQ timed out on these MacBook controllers in
++ * 2014. Big Sur uses MSI on the same controller, so an external guarded test
++ * appliance needs a tightly scoped way to re-test current kernels.
++ */
++static bool mbp11_3_msi_diagnostic;
++module_param_named(mbp11_3_msi_diagnostic,
++		   mbp11_3_msi_diagnostic, bool, 0444);
++MODULE_PARM_DESC(mbp11_3_msi_diagnostic,
++		 "Enable MSI on Samsung 144d:1600 only on MacBookPro11,3 for guarded diagnostics");
++
+ static char *ahci_mask_port_map;
+ module_param_named(mask_port_map, ahci_mask_port_map, charp, 0444);
+ MODULE_PARM_DESC(mask_port_map,
+@@ -1971,6 +1983,15 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		return -ENOMEM;
+ 	hpriv->flags |= (unsigned long)pi.private_data;
+ 
++	if (mbp11_3_msi_diagnostic &&
++	    pdev->vendor == PCI_VENDOR_ID_SAMSUNG &&
++	    pdev->device == 0x1600 &&
++	    dmi_match(DMI_PRODUCT_NAME, "MacBookPro11,3")) {
++		hpriv->flags &= ~AHCI_HFLAG_NO_MSI;
++		dev_warn(dev,
++			 "enabling opt-in MacBookPro11,3 MSI diagnostic; never use for an installed root filesystem\n");
++	}
++
+ 	/* MCP65 revision A1 and A2 can't do MSI */
+ 	if (board_id == board_ahci_mcp65 &&
+ 	    (pdev->revision == 0xa1 || pdev->revision == 0xa2))

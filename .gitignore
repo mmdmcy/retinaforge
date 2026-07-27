@@ -8,12 +8,30 @@ AGENTS.md
 private/
 docs/private/
 state/
+local/
+.cache/
+tmp/
 captures/
 reports/
 logs/
+crash/
+dumps/
 *.log
 *.sqlite
 *.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local working memory and machine-specific records
+docs/handoff.md
+docs/investigation-history.md
+docs/macos-reinstall-runbook.md
+docs/source-notes/2026-07-14-big-sur-daily-use-and-steam.md
+
+# Rejected local prototypes retained only as negative-result artifacts
+patches/0001-libata-allow-noncq-fua-for-apple-sm1024f.patch
 
 # Credentials and certificates
 *.pem
@@ -21,6 +39,11 @@ logs/
 *.crt
 *.p12
 *.pfx
+*.age
+id_rsa*
+id_ed25519*
+known_hosts
+authorized_keys
 
 # Kernel/package build outputs
 build/
@@ -32,6 +55,15 @@ out/
 *.buildinfo
 *.tar.xz
 *.tar.zst
+*.dmg
+*.iso
+*.img
+*.trace
+*.pcap
+*.pcapng
+*.core
+core
+core.*
 
 # Editor and operating-system files
 .DS_Store

@@ -1,0 +1,520 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Minimal init for the MacBookPro11,3 AHCI read-only baseline appliance.
+# The only writable block device is the removable disk whose FAT filesystem is
+# labelled MBP_AHCI. Every other physical block device is made read-only before
+# controller state is collected.
+
+set -u
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/
+export LC_ALL=C
+
+# Linux exposes ATA devices through the SCSI layer. The SCSI model field is
+# limited to 16 characters, so the drive's full ATA identity
+# "APPLE SSD SM1024F" may appear here as "APPLE SSD SM1024".
+target_model_prefix='APPLE SSD SM1024'
+target_disk=
+
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+mkdir -p /sys/kernel/debug /mnt/capture
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
+
+echo
+echo "MacBookPro11,3 AHCI read-only baseline"
+echo "No internal filesystem will be mounted."
+echo
+
+mdev -s
+
+emergency_shell() {
+	message=$1
+	echo
+	echo "ERROR: $message"
+	echo "The internal disk has not been mounted. An emergency shell is open."
+	echo "Run 'poweroff -f' when finished."
+	exec sh
+}
+
+capture_dev=
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+	mdev -s
+	capture_dev=$(findfs LABEL=MBP_AHCI 2>/dev/null || true)
+	[ -n "$capture_dev" ] && break
+	attempt=$((attempt + 1))
+	sleep 1
+done
+[ -n "$capture_dev" ] || emergency_shell "USB filesystem label MBP_AHCI was not found"
+[ -b "$capture_dev" ] || emergency_shell "$capture_dev is not a block device"
+
+capture_part=$(basename "$capture_dev")
+case "$capture_part" in
+	sd[a-z][0-9]*) capture_disk=${capture_part%%[0-9]*} ;;
+	nvme[0-9]n[0-9]p[0-9]*) capture_disk=${capture_part%p*} ;;
+	*) emergency_shell "unsupported capture partition name: $capture_part" ;;
+esac
+
+wait_for_block_topology() {
+	previous=
+	stable=0
+	attempt=0
+	while [ "$attempt" -lt 10 ]; do
+		mdev -s
+		current=$(
+			for sysdev in /sys/class/block/*; do
+				name=$(basename "$sysdev")
+				case "$name" in
+					sd*|nvme*)
+						sectors=$(cat "$sysdev/size" 2>/dev/null || true)
+						printf '%s:%s\n' "$name" "${sectors:-unknown}"
+						;;
+				esac
+			done
+		)
+
+		if [ -n "$current" ] && [ "$current" = "$previous" ]; then
+			stable=$((stable + 1))
+		else
+			stable=0
+			previous=$current
+		fi
+		[ "$stable" -ge 2 ] && return 0
+		attempt=$((attempt + 1))
+		sleep 1
+	done
+	emergency_shell "block-device topology did not settle"
+}
+
+protect_non_capture_disks() {
+	protected=0
+	# Applying BLKROSET to both whole disks and their partitions is
+	# intentional. The labelled removable lab disk is the sole exception.
+	# Empty removable readers expose a zero-capacity sd* node which cannot be
+	# opened for BLKROSET; they contain no addressable media and are skipped.
+	for sysdev in /sys/class/block/*; do
+		name=$(basename "$sysdev")
+		case "$name" in
+			"$capture_disk"|"$capture_part"|loop*|ram*|zram*|dm-*|md*) continue ;;
+			sd*|nvme*)
+				[ -b "/dev/$name" ] || continue
+				sectors=$(cat "$sysdev/size" 2>/dev/null || true)
+				case "$sectors" in
+					''|*[!0-9]*)
+						emergency_shell "could not determine /dev/$name capacity"
+						;;
+					0)
+						echo "Skipping zero-capacity /dev/$name (no addressable media)."
+						echo "mbp-ahci: skipping zero-capacity /dev/$name (no addressable media)" \
+							> /dev/kmsg
+						continue
+						;;
+				esac
+				blockdev --setro "/dev/$name" 2>/dev/null || \
+					emergency_shell "could not make /dev/$name read-only"
+				[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || \
+					emergency_shell "/dev/$name did not become read-only"
+				protected=$((protected + 1))
+				;;
+		esac
+	done
+	[ "$protected" -gt 0 ] || emergency_shell "no non-capture disk was protected"
+}
+
+wait_for_block_topology
+protect_non_capture_disks
+
+target_seen=0
+attempt=0
+while [ "$attempt" -lt 15 ]; do
+	for block in /sys/class/block/sd? /sys/class/block/nvme*n?; do
+		[ -r "$block/device/model" ] || continue
+		if grep -qF "$target_model_prefix" "$block/device/model"; then
+			target_seen=1
+			target_disk="/dev/$(basename "$block")"
+			break
+		fi
+	done
+	[ "$target_seen" -eq 1 ] && break
+	mdev -s
+	attempt=$((attempt + 1))
+	sleep 1
+done
+[ "$target_seen" -eq 1 ] || emergency_shell "$target_model_prefix target was not discovered"
+
+# Close the discovery window once more and require the identified SSD itself
+# to retain the block-layer read-only flag before the USB becomes writable.
+protect_non_capture_disks
+[ "$(blockdev --getro "$target_disk" 2>/dev/null)" = 1 ] || \
+	emergency_shell "$target_disk is not read-only after discovery"
+
+mount -t vfat -o rw,noatime,utf8=1 "$capture_dev" /mnt/capture || \
+	emergency_shell "could not mount $capture_dev"
+
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+out_dir="/mnt/capture/captures/$stamp"
+mkdir -p "$out_dir" || emergency_shell "could not create capture directory"
+log="$out_dir/controller-state.txt"
+
+sanitize() {
+	sed -E \
+		-e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g' \
+		-e 's/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/<redacted-uuid>/g' \
+		-e '/[Ss]erial [Nn]umber:/s/:.*/: <redacted>/' \
+		-e '/[Ss]erial[Nn]umber:/s/:.*/: <redacted>/' \
+		-e '/[Ww][Ww][Nn] [Dd]evice [Ii]dentifier:/s/:.*/: <redacted>/'
+}
+
+section() {
+	printf '\n## %s\n' "$1"
+}
+
+dump_readable() {
+	for path in "$@"; do
+		if [ -f "$path" ] && [ -r "$path" ]; then
+			printf '%s: ' "$path"
+			cat "$path"
+		fi
+	done
+}
+
+diagnostic_profile=baseline
+diagnostic_rc=0
+diagnostic_report=/run/mbp-ahci-diagnostic.txt
+
+record_diagnostic_failure() {
+	printf 'FAIL: %s\n' "$1"
+	diagnostic_rc=1
+}
+
+find_apple_ahci_controller() {
+	for device in /sys/bus/pci/devices/*; do
+		[ -r "$device/vendor" ] || continue
+		[ -r "$device/device" ] || continue
+		if [ "$(cat "$device/vendor")" = 0x144d ] && \
+		   [ "$(cat "$device/device")" = 0x1600 ]; then
+			basename "$device"
+			return 0
+		fi
+	done
+	return 1
+}
+
+run_diagnostic_profile() {
+	kernel_release=$(uname -r)
+	controller=$(find_apple_ahci_controller 2>/dev/null || true)
+	target_name=$(basename "$target_disk")
+	queue_depth=$(cat "/sys/class/block/$target_name/device/queue_depth" 2>/dev/null || true)
+	msi_count=0
+	if [ -n "$controller" ] && [ -d "/sys/bus/pci/devices/$controller/msi_irqs" ]; then
+		msi_count=$(ls -1 "/sys/bus/pci/devices/$controller/msi_irqs" 2>/dev/null | wc -l)
+	fi
+
+	case "$kernel_release" in
+		*-mbp-ahci-msi-noncq)
+			diagnostic_profile=msi-noncq
+			;;
+		*-mbp-ahci-msi-ncq-read)
+			diagnostic_profile=msi-ncq-read
+			;;
+		*)
+			diagnostic_profile=baseline
+			;;
+	esac
+
+	{
+		printf 'profile=%s\n' "$diagnostic_profile"
+		printf 'controller=%s\n' "${controller:-not-found}"
+		printf 'target_disk=%s\n' "$target_disk"
+		printf 'target_read_only=%s\n' "$(blockdev --getro "$target_disk" 2>/dev/null || printf unknown)"
+		printf 'queue_depth=%s\n' "${queue_depth:-unknown}"
+		printf 'msi_vector_count=%s\n' "$msi_count"
+
+		case "$diagnostic_profile" in
+			baseline)
+				printf 'result=not-requested\n'
+				;;
+			msi-noncq)
+				grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline || \
+					record_diagnostic_failure "opt-in AHCI MSI parameter is absent"
+				grep -q 'libata.force=noncq' /proc/cmdline || \
+					record_diagnostic_failure "non-NCQ safety parameter is absent"
+				[ "$msi_count" -gt 0 ] || \
+					record_diagnostic_failure "controller did not allocate an MSI vector"
+				[ "$queue_depth" = 1 ] || \
+					record_diagnostic_failure "target queue depth is not one"
+				;;
+			msi-ncq-read)
+				grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline || \
+					record_diagnostic_failure "opt-in AHCI MSI parameter is absent"
+				[ "$msi_count" -gt 0 ] || \
+					record_diagnostic_failure "controller did not allocate an MSI vector"
+				[ -n "$queue_depth" ] && [ "$queue_depth" -gt 1 ] || \
+					record_diagnostic_failure "NCQ queue depth is not greater than one"
+				if [ "$diagnostic_rc" -eq 0 ]; then
+					echo "mbp-ahci: begin bounded read-only MSI+NCQ stress" > /dev/kmsg
+					stress_rc=0
+					pids=
+					for skip_mib in 0 65536 131072 196608; do
+						timeout -s KILL 30 dd if="$target_disk" of=/dev/null \
+							bs=1M skip="$skip_mib" count=64 iflag=direct \
+							status=none &
+						pids="$pids $!"
+					done
+					for pid in $pids; do
+						wait "$pid" || stress_rc=1
+					done
+					echo "mbp-ahci: end bounded read-only MSI+NCQ stress rc=$stress_rc" > /dev/kmsg
+					[ "$stress_rc" -eq 0 ] || \
+						record_diagnostic_failure "one or more bounded reads failed or timed out"
+				fi
+				;;
+		esac
+
+		if [ "$diagnostic_rc" -eq 0 ]; then
+			printf 'result=pass\n'
+		else
+			printf 'result=fail\n'
+		fi
+	} > "$diagnostic_report"
+}
+
+run_diagnostic_profile
+
+collect() {
+	section "capture safety"
+	printf 'capture_device=%s\n' "$capture_dev"
+	printf 'capture_disk=%s\n' "/dev/$capture_disk"
+	for sysdev in /sys/class/block/*; do
+		name=$(basename "$sysdev")
+		[ -b "/dev/$name" ] || continue
+		sectors=$(cat "$sysdev/size" 2>/dev/null || true)
+		if [ "$sectors" = 0 ]; then
+			printf '%s read_only=not-applicable-zero-capacity sectors=0\n' "/dev/$name"
+		else
+			printf '%s read_only=' "/dev/$name"
+			blockdev --getro "/dev/$name" 2>/dev/null || printf 'unknown\n'
+		fi
+	done
+	printf 'mounts:\n'
+	cat /proc/mounts
+
+	section "kernel"
+	uname -srvmo
+	printf 'kernel_release='; uname -r
+	printf 'command_line='; cat /proc/cmdline
+	if [ -r /proc/config.gz ]; then
+		printf 'embedded_config_sha256='; sha256sum /proc/config.gz | cut -d' ' -f1
+	fi
+
+	section "diagnostic assertions"
+	cat "$diagnostic_report"
+
+	section "safe DMI identity"
+	dump_readable \
+		/sys/class/dmi/id/sys_vendor \
+		/sys/class/dmi/id/product_name \
+		/sys/class/dmi/id/product_version \
+		/sys/class/dmi/id/bios_vendor \
+		/sys/class/dmi/id/bios_version \
+		/sys/class/dmi/id/bios_date
+
+	section "PCI inventory"
+	lspci -nnk 2>&1 || true
+
+	controller=
+	for device in /sys/bus/pci/devices/*; do
+		[ -r "$device/vendor" ] || continue
+		[ -r "$device/device" ] || continue
+		if [ "$(cat "$device/vendor")" = 0x144d ] && \
+		   [ "$(cat "$device/device")" = 0x1600 ]; then
+			controller=$(basename "$device")
+			break
+		fi
+	done
+
+	section "Apple Samsung AHCI controller"
+	if [ -n "$controller" ]; then
+		printf 'controller=%s\n' "$controller"
+		printf 'msi_irqs='
+		if [ -d "/sys/bus/pci/devices/$controller/msi_irqs" ]; then
+			ls -1 "/sys/bus/pci/devices/$controller/msi_irqs" 2>/dev/null | tr '\n' ' '
+		fi
+		printf '\n'
+		timeout -s KILL 15 lspci -vvnn -s "$controller" 2>&1 || true
+		timeout -s KILL 15 lspci -xxxx -s "$controller" 2>&1 || true
+		dump_readable \
+			"/sys/bus/pci/devices/$controller/enable" \
+			"/sys/bus/pci/devices/$controller/irq" \
+			"/sys/bus/pci/devices/$controller/msi_bus" \
+			"/sys/bus/pci/devices/$controller/power/control" \
+			"/sys/bus/pci/devices/$controller/power/runtime_status" \
+			"/sys/bus/pci/devices/$controller/power/runtime_active_time" \
+			"/sys/bus/pci/devices/$controller/power/runtime_suspended_time" \
+			"/sys/bus/pci/devices/$controller/resource"
+	else
+		printf 'controller=not-found\n'
+	fi
+
+	section "interrupts"
+	cat /proc/interrupts
+
+	section "AHCI and libata module parameters"
+	for path in /sys/module/ahci/parameters/* \
+		/sys/module/libahci/parameters/* \
+		/sys/module/libata/parameters/*; do
+		[ -f "$path" ] && dump_readable "$path"
+	done
+
+	section "SCSI hosts"
+	for host in /sys/class/scsi_host/host*; do
+		[ -e "$host" ] || continue
+		printf '\n[%s]\n' "$host"
+		dump_readable \
+			"$host/proc_name" \
+			"$host/state" \
+			"$host/can_queue" \
+			"$host/host_busy" \
+			"$host/active_mode" \
+			"$host/supported_mode" \
+			"$host/link_power_management_policy" \
+			"$host/link_power_management_supported" \
+			"$host/ahci_host_version" \
+			"$host/ahci_host_caps" \
+			"$host/ahci_host_cap2" \
+			"$host/ahci_port_cmd"
+	done
+
+	section "ATA links and devices"
+	for link in /sys/class/ata_link/link*; do
+		[ -e "$link" ] || continue
+		printf '\n[%s]\n' "$link"
+		dump_readable \
+			"$link/hw_sata_spd_limit" \
+			"$link/sata_spd" \
+			"$link/sata_spd_limit"
+	done
+	for device in /sys/class/ata_device/dev*; do
+		[ -e "$device" ] || continue
+		printf '\n[%s]\n' "$device"
+		dump_readable \
+			"$device/class" \
+			"$device/dma_mode" \
+			"$device/pio_mode" \
+			"$device/spdn_cnt" \
+			"$device/trim" \
+			"$device/xfer_mode"
+	done
+
+	section "block devices"
+	target_disk=
+	for block in /sys/class/block/sd? /sys/class/block/nvme*n?; do
+		[ -e "$block" ] || continue
+		name=$(basename "$block")
+		model=$(cat "$block/device/model" 2>/dev/null || true)
+		printf '\n[%s model=%s]\n' "/dev/$name" "$model"
+		printf 'read_only='; blockdev --getro "/dev/$name" 2>/dev/null || printf 'unknown\n'
+		printf 'logical_sector_size='; blockdev --getss "/dev/$name" 2>/dev/null || true
+		printf 'physical_sector_size='; cat "$block/queue/physical_block_size" 2>/dev/null || true
+		printf 'sysfs_sectors='; cat "$block/size" 2>/dev/null || true
+		printf 'sectors='; blockdev --getsz "/dev/$name" 2>/dev/null || true
+		if printf '%s' "$model" | grep -qF "$target_model_prefix"; then
+			target_disk="/dev/$name"
+		fi
+	done
+
+	section "target ATA identify"
+	if [ -n "$target_disk" ]; then
+		printf 'target_disk=%s\n' "$target_disk"
+		timeout -s KILL 15 hdparm -I "$target_disk" 2>&1 || true
+	else
+		printf 'target_disk=not-found\n'
+	fi
+
+	section "target SCSI disk state"
+	for disk in /sys/class/scsi_disk/*; do
+		[ -e "$disk" ] || continue
+		printf '\n[%s]\n' "$disk"
+		dump_readable \
+			"$disk/FUA" \
+			"$disk/cache_type" \
+			"$disk/manage_runtime_start_stop" \
+			"$disk/manage_shutdown" \
+			"$disk/manage_start_stop" \
+			"$disk/manage_system_start_stop" \
+			"$disk/provisioning_mode" \
+			"$disk/zeroing_mode"
+	done
+
+	section "target request queue"
+	if [ -n "$target_disk" ]; then
+		name=$(basename "$target_disk")
+		queue="/sys/class/block/$name/queue"
+		dump_readable "/sys/class/block/$name/device/queue_depth"
+		dump_readable \
+			"$queue/dma_alignment" \
+			"$queue/fua" \
+			"$queue/io_timeout" \
+			"$queue/logical_block_size" \
+			"$queue/max_hw_sectors_kb" \
+			"$queue/max_sectors_kb" \
+			"$queue/max_segments" \
+			"$queue/nr_requests" \
+			"$queue/physical_block_size" \
+			"$queue/read_ahead_kb" \
+			"$queue/scheduler" \
+			"$queue/stable_writes" \
+			"$queue/write_cache" \
+			"$queue/wbt_lat_usec"
+	fi
+
+	section "thermal snapshot"
+	for zone in /sys/class/thermal/thermal_zone*; do
+		[ -e "$zone" ] || continue
+		printf '\n[%s]\n' "$zone"
+		dump_readable "$zone/type" "$zone/temp" "$zone/policy"
+	done
+	for hwmon in /sys/class/hwmon/hwmon*; do
+		[ -e "$hwmon" ] || continue
+		printf '\n[%s]\n' "$hwmon"
+		dump_readable "$hwmon/name"
+		for value in "$hwmon"/temp*_label "$hwmon"/temp*_input \
+			"$hwmon"/fan*_input; do
+			[ -f "$value" ] && dump_readable "$value"
+		done
+	done
+
+	section "kernel log"
+	dmesg
+}
+
+echo "Collecting sanitized controller state to $log"
+collect 2>&1 | sanitize | tee "$log"
+collect_rc=0
+
+printf '%s  %s\n' "$(sha256sum "$log" | cut -d' ' -f1)" \
+	"$(basename "$log")" > "$out_dir/SHA256SUMS"
+printf 'kernel=%s\ncapture_rc=%s\ndiagnostic_profile=%s\ndiagnostic_rc=%s\n' \
+	"$(uname -r)" "$collect_rc" "$diagnostic_profile" "$diagnostic_rc" \
+	> "$out_dir/COMPLETE"
+sync
+
+echo
+echo "Capture complete: $out_dir"
+echo "The MacBook will power off in 10 seconds."
+sleep 10
+
+umount /mnt/capture || {
+	sync
+	sleep 2
+	umount /mnt/capture 2>/dev/null || true
+}
+sync
+poweroff -f

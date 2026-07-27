@@ -1,0 +1,766 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Guarded raw and filesystem-stack write appliance for the MacBookPro11,3 AHCI
+# project. It writes only to the dedicated, identity-checked tail partition.
+# APFS is never mounted.
+
+set -u
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/
+export LC_ALL=C
+
+target_model_prefix='APPLE SSD SM1024'
+scratch_label='MBPTEST'
+capture_label='MBP_AHCI'
+target_disk=
+target_name=
+scratch_dev=
+scratch_name=
+scratch_partition_number=
+scratch_gpt_name=absent
+scratch_discovery=label
+capture_dev=
+capture_disk=
+capture_part=
+capture_mounted=0
+diagnostic_profile=unknown
+diagnostic_rc=1
+failure_stage=capture-discovery
+stack_mount=/mnt/scratch
+stack_mounted=0
+stack_mapping=mbptest_stack_crypt
+stack_mapping_active=0
+stack_mapper=
+
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+mkdir -p /sys/kernel/debug /mnt/capture "$stack_mount" /dev/mapper
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
+mdev -s
+
+echo
+echo "MacBookPro11,3 AHCI guarded write/flush A/B appliance"
+echo "Only the dedicated $scratch_label partition may be written."
+echo "APFS will not be mounted."
+echo
+
+sanitize() {
+	sed -E \
+		-e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g' \
+		-e 's/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/<redacted-uuid>/g' \
+		-e '/[Ss]erial [Nn]umber:/s/:.*/: <redacted>/' \
+		-e '/[Ss]erial[Nn]umber:/s/:.*/: <redacted>/'
+}
+
+mount_capture_for_diagnostics() {
+	[ "$capture_mounted" -eq 0 ] || return 0
+	[ -n "$capture_dev" ] || return 1
+	[ -b "$capture_dev" ] || return 1
+	mount -t vfat -o rw,noatime,utf8=1 "$capture_dev" /mnt/capture || return 1
+	capture_mounted=1
+	return 0
+}
+
+write_failure_capture() {
+	message=$1
+	stamp=$(date -u +%Y%m%dT%H%M%SZ)
+	failure_dir="/mnt/capture/failures/$stamp"
+	mkdir -p "$failure_dir" || return 1
+	{
+		printf 'result=guard-refusal\n'
+		printf 'stage=%s\n' "$failure_stage"
+		printf 'error=%s\n' "$message"
+		printf 'kernel=%s\n' "$(uname -r)"
+		printf 'profile=%s\n' "$diagnostic_profile"
+		printf 'command_line='; cat /proc/cmdline
+		printf 'capture_device=%s\n' "${capture_dev:-unknown}"
+		printf 'capture_disk=%s\n' "${capture_disk:-unknown}"
+		printf 'target_disk=%s\n' "${target_disk:-unknown}"
+		printf 'scratch_partition=%s\n' "${scratch_dev:-unknown}"
+			printf 'scratch_partition_number=%s\n' "${scratch_partition_number:-unknown}"
+			printf 'scratch_gpt_name=%s\n' "${scratch_gpt_name:-unknown}"
+			printf 'scratch_discovery=%s\n' "${scratch_discovery:-unknown}"
+		printf '\n## mounts\n'; cat /proc/mounts
+		printf '\n## block topology\n'
+		for sysdev in /sys/class/block/*; do
+			name=$(basename "$sysdev")
+			printf '[%s]\n' "/dev/$name"
+			printf 'size_sectors='; cat "$sysdev/size" 2>/dev/null || printf 'unknown\n'
+			printf 'read_only='; blockdev --getro "/dev/$name" 2>/dev/null || printf 'unavailable\n'
+			if [ -r "$sysdev/device/model" ]; then
+				printf 'model='; cat "$sysdev/device/model"
+			fi
+			[ -r "$sysdev/uevent" ] && cat "$sysdev/uevent"
+		done
+		printf '\n## DMI\n'
+		printf 'sys_vendor='; cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true
+		printf 'product_name='; cat /sys/class/dmi/id/product_name 2>/dev/null || true
+		printf '\n## PCI\n'; lspci -nn 2>&1 || true
+		printf '\n## kernel log\n'; dmesg
+	} 2>&1 | sanitize > "$failure_dir/guard-refusal.txt"
+	printf '%s  %s\n' \
+		"$(sha256sum "$failure_dir/guard-refusal.txt" | cut -d' ' -f1)" \
+		'guard-refusal.txt' > "$failure_dir/SHA256SUMS"
+	printf 'result=guard-refusal\nstage=%s\nerror=%s\n' \
+		"$failure_stage" "$message" > "$failure_dir/COMPLETE"
+	return 0
+}
+
+reprotect_target() {
+	[ -n "$target_name" ] || return 0
+	for sysdev in /sys/class/block/"$target_name"*; do
+		[ -e "$sysdev" ] || continue
+		name=$(basename "$sysdev")
+		[ -b "/dev/$name" ] || continue
+		blockdev --setro "/dev/$name" 2>/dev/null || true
+	done
+	[ -b "/dev/$target_name" ] && blockdev --setro "/dev/$target_name" 2>/dev/null || true
+}
+
+cleanup_stack() {
+	if [ "$stack_mounted" -eq 1 ]; then
+		timeout -s KILL 20 umount "$stack_mount" 2>/dev/null || true
+		stack_mounted=0
+	fi
+	if [ "$stack_mapping_active" -eq 1 ]; then
+		timeout -s KILL 20 dmsetup remove --noudevsync "$stack_mapping" \
+			2>/dev/null || true
+		stack_mapping_active=0
+		stack_mapper=
+	fi
+}
+
+cleanup_and_reprotect() {
+	cleanup_stack
+	reprotect_target
+}
+
+poweroff_after_failure() {
+	message=$1
+	echo
+	echo "ERROR: $message"
+	echo "Failure stage: $failure_stage"
+	echo "No APFS filesystem was mounted. Cleaning scratch state and re-protecting the SSD."
+	cleanup_and_reprotect
+	if mount_capture_for_diagnostics; then
+		write_failure_capture "$message" || true
+		sync
+		umount /mnt/capture 2>/dev/null || true
+		capture_mounted=0
+	else
+		echo "Capture USB could not be mounted; record the ERROR line above."
+	fi
+	echo "Powering off in 15 seconds."
+	sleep 15
+	poweroff -f
+	while :; do sleep 60; done
+}
+
+wait_for_block_topology() {
+	previous=
+	stable=0
+	attempt=0
+	while [ "$attempt" -lt 12 ]; do
+		mdev -s
+		current=$(
+			for sysdev in /sys/class/block/*; do
+				name=$(basename "$sysdev")
+				case "$name" in
+					sd*|nvme*)
+						sectors=$(cat "$sysdev/size" 2>/dev/null || true)
+						printf '%s:%s\n' "$name" "${sectors:-unknown}"
+						;;
+				esac
+			done
+		)
+		if [ -n "$current" ] && [ "$current" = "$previous" ]; then
+			stable=$((stable + 1))
+		else
+			stable=0
+			previous=$current
+		fi
+		[ "$stable" -ge 2 ] && return 0
+		attempt=$((attempt + 1))
+		sleep 1
+	done
+	return 1
+}
+
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+	mdev -s
+	capture_dev=$(findfs "LABEL=$capture_label" 2>/dev/null || true)
+	[ -n "$capture_dev" ] && break
+	attempt=$((attempt + 1))
+	sleep 1
+done
+[ -n "$capture_dev" ] || poweroff_after_failure "capture USB label $capture_label was not found"
+[ -b "$capture_dev" ] || poweroff_after_failure "$capture_dev is not a block device"
+
+failure_stage=capture-identity
+capture_part=$(basename "$capture_dev")
+case "$capture_part" in
+	sd[a-z][0-9]*) capture_disk=${capture_part%%[0-9]*} ;;
+	nvme[0-9]n[0-9]p[0-9]*) capture_disk=${capture_part%p*} ;;
+	*) poweroff_after_failure "unsupported capture partition name: $capture_part" ;;
+esac
+
+failure_stage=capture-mount
+mount_capture_for_diagnostics || poweroff_after_failure "could not mount capture USB"
+
+failure_stage=block-topology
+wait_for_block_topology || poweroff_after_failure "block-device topology did not settle"
+
+# Start with every non-capture disk and partition read-only. Zero-capacity
+# removable readers have no addressable media and are the sole exception.
+failure_stage=initial-read-only-protection
+protected=0
+for sysdev in /sys/class/block/*; do
+	name=$(basename "$sysdev")
+	case "$name" in
+		"$capture_disk"|"$capture_part"|loop*|ram*|zram*|dm-*|md*) continue ;;
+		sd*|nvme*)
+			[ -b "/dev/$name" ] || continue
+			sectors=$(cat "$sysdev/size" 2>/dev/null || true)
+			case "$sectors" in
+				''|*[!0-9]*) poweroff_after_failure "could not determine /dev/$name capacity" ;;
+				0) continue ;;
+			esac
+			blockdev --setro "/dev/$name" 2>/dev/null || \
+				poweroff_after_failure "could not protect /dev/$name"
+			[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || \
+				poweroff_after_failure "/dev/$name did not become read-only"
+			protected=$((protected + 1))
+			;;
+	esac
+done
+[ "$protected" -gt 0 ] || poweroff_after_failure "no non-capture disk was protected"
+
+# Identify the exact Apple SSD through its 16-character SCSI model exposure.
+failure_stage=target-identity
+target_count=0
+for block in /sys/class/block/sd?; do
+	[ -r "$block/device/model" ] || continue
+	if grep -qF "$target_model_prefix" "$block/device/model"; then
+		target_count=$((target_count + 1))
+		target_name=$(basename "$block")
+		target_disk="/dev/$target_name"
+	fi
+done
+[ "$target_count" -eq 1 ] || poweroff_after_failure "expected exactly one $target_model_prefix disk"
+[ "$target_name" != "$capture_disk" ] || poweroff_after_failure "target and capture disk are identical"
+[ "$(blockdev --getro "$target_disk" 2>/dev/null)" = 1 ] || \
+	poweroff_after_failure "target SSD is not initially read-only"
+
+failure_stage=dmi-identity
+[ "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)" = 'Apple Inc.' ] || \
+	poweroff_after_failure "DMI vendor is not Apple Inc."
+[ "$(cat /sys/class/dmi/id/product_name 2>/dev/null)" = 'MacBookPro11,3' ] || \
+	poweroff_after_failure "DMI product is not MacBookPro11,3"
+
+failure_stage=kernel-profile
+kernel_release=$(uname -r)
+case "$kernel_release" in
+	*-mbp-ahci-legacy-ncq-write) diagnostic_profile=legacy-ncq-write ;;
+	*-mbp-ahci-msi-ncq-write) diagnostic_profile=msi-ncq-write ;;
+	*-mbp-ahci-legacy-stack) diagnostic_profile=legacy-stack ;;
+	*-mbp-ahci-msi-stack) diagnostic_profile=msi-stack ;;
+	*-mbp-ahci-msi-noncq-stack) diagnostic_profile=msi-noncq-stack ;;
+	*) poweroff_after_failure "unrecognized write-test kernel release: $kernel_release" ;;
+esac
+grep -q 'mbp_ahci.write_test=1' /proc/cmdline || \
+	poweroff_after_failure "explicit write-test command-line opt-in is absent"
+case "$diagnostic_profile" in
+	legacy-stack|msi-stack|msi-noncq-stack)
+		grep -q 'mbp_ahci.stack_test=1' /proc/cmdline || \
+			poweroff_after_failure "filesystem-stack opt-in is absent"
+		;;
+	*)
+		grep -q 'mbp_ahci.stack_test=1' /proc/cmdline && \
+			poweroff_after_failure "raw profile unexpectedly contains filesystem-stack opt-in"
+		;;
+esac
+
+# Require the filesystem label and exact partition number. If macOS supplied
+# an optional GPT name, it must match too. Then prove that this is the final
+# small child of the identified Apple SSD.
+failure_stage=scratch-identity
+scratch_dev=$(findfs "LABEL=$scratch_label" 2>/dev/null || true)
+if [ -z "$scratch_dev" ]; then
+	case "$diagnostic_profile" in
+		msi-stack|msi-noncq-stack)
+			# Earlier guarded stack probes can leave either unrecognized
+			# dm-crypt ciphertext or a partial filesystem with one of the
+			# appliance's labels. Re-entry is constrained below by exact
+			# hardware, partition-count, and recorded-geometry checks.
+			scratch_dev="/dev/${target_name}3"
+			scratch_discovery=exact-geometry-reentry
+			reentry_type=$(blkid -s TYPE -o value "$scratch_dev" 2>/dev/null || true)
+			reentry_label=$(blkid -s LABEL -o value "$scratch_dev" 2>/dev/null || true)
+			case "$reentry_type:$reentry_label" in
+				:|ext4:MBPTEST_PLAIN|ext4:MBPTEST_CRYPT) ;;
+				*) poweroff_after_failure "re-entry scratch has a signature not created by this appliance" ;;
+			esac
+			;;
+		*)
+			poweroff_after_failure "scratch filesystem label $scratch_label was not found"
+			;;
+	esac
+fi
+[ -b "$scratch_dev" ] || poweroff_after_failure "$scratch_dev is not a block device"
+scratch_name=$(basename "$scratch_dev")
+[ -f "/sys/class/block/$scratch_name/partition" ] || \
+	poweroff_after_failure "$scratch_dev is not a partition"
+scratch_partition_number=$(cat "/sys/class/block/$scratch_name/partition" 2>/dev/null || true)
+[ "$scratch_partition_number" = 3 ] || \
+	poweroff_after_failure "$scratch_dev is not partition number 3"
+if grep -q '^PARTNAME=' "/sys/class/block/$scratch_name/uevent" 2>/dev/null; then
+	grep -Fxq "PARTNAME=$scratch_label" "/sys/class/block/$scratch_name/uevent" 2>/dev/null || \
+		poweroff_after_failure "$scratch_dev GPT partition name is not $scratch_label"
+	scratch_gpt_name=$scratch_label
+fi
+
+scratch_real=$(readlink -f "/sys/class/block/$scratch_name")
+scratch_parent=$(basename "$(dirname "$scratch_real")")
+[ "$scratch_parent" = "$target_name" ] || \
+	poweroff_after_failure "$scratch_dev is not a child of $target_disk"
+
+partition_count=0
+for child in /sys/class/block/"$target_name"*; do
+	[ -f "$child/partition" ] || continue
+	partition_count=$((partition_count + 1))
+done
+[ "$partition_count" -eq 3 ] || \
+	poweroff_after_failure "expected exactly three partitions on $target_disk"
+
+failure_stage=scratch-geometry
+scratch_size=$(blockdev --getsize64 "$scratch_dev" 2>/dev/null || true)
+scratch_start=$(cat "/sys/class/block/$scratch_name/start" 2>/dev/null || true)
+scratch_sectors=$(cat "/sys/class/block/$scratch_name/size" 2>/dev/null || true)
+target_sectors=$(cat "/sys/class/block/$target_name/size" 2>/dev/null || true)
+for value in "$scratch_size" "$scratch_start" "$scratch_sectors" "$target_sectors"; do
+	case "$value" in
+		''|*[!0-9]*) poweroff_after_failure "scratch or target geometry is not numeric" ;;
+	esac
+done
+[ "$scratch_size" -ge 4294967296 ] && [ "$scratch_size" -le 17179869184 ] || \
+	poweroff_after_failure "scratch size is outside the 4-16 GiB safety window"
+if [ "$scratch_discovery" = exact-geometry-reentry ]; then
+	[ "$scratch_start" = 1937909760 ] || \
+		poweroff_after_failure "re-entry scratch start does not match the recorded disposable partition"
+	[ "$scratch_sectors" = 16300032 ] || \
+		poweroff_after_failure "re-entry scratch size does not match the recorded disposable partition"
+fi
+[ $((scratch_start * 10)) -ge $((target_sectors * 9)) ] || \
+	poweroff_after_failure "scratch partition is not in the final 10 percent of the SSD"
+scratch_end=$((scratch_start + scratch_sectors))
+[ "$scratch_end" -le "$target_sectors" ] || \
+	poweroff_after_failure "scratch partition extends beyond the SSD"
+[ $((target_sectors - scratch_end)) -le 4096 ] || \
+	poweroff_after_failure "scratch partition is not the final data partition"
+
+# Refuse any internal mount before the parent disk is temporarily writable.
+failure_stage=internal-mount-check
+if awk -v prefix="/dev/$target_name" '$1 == prefix || index($1, prefix) == 1 { found=1 } END { exit !found }' /proc/mounts; then
+	poweroff_after_failure "an internal SSD device is mounted"
+fi
+
+failure_stage=controller-identity
+controller=
+for device in /sys/bus/pci/devices/*; do
+	[ -r "$device/vendor" ] || continue
+	[ -r "$device/device" ] || continue
+	if [ "$(cat "$device/vendor")" = 0x144d ] && \
+	   [ "$(cat "$device/device")" = 0x1600 ]; then
+		[ -z "$controller" ] || poweroff_after_failure "multiple 144d:1600 controllers found"
+		controller=$(basename "$device")
+	fi
+done
+[ -n "$controller" ] || poweroff_after_failure "Apple Samsung 144d:1600 controller not found"
+
+failure_stage=interrupt-and-ncq-state
+queue_depth=$(cat "/sys/class/block/$target_name/device/queue_depth" 2>/dev/null || true)
+case "$diagnostic_profile" in
+	msi-noncq-stack)
+		[ "$queue_depth" = 1 ] || \
+			poweroff_after_failure "forced non-NCQ profile does not have queue depth one"
+		grep -q 'libata.force=noncq' /proc/cmdline || \
+			poweroff_after_failure "forced non-NCQ profile is missing its command-line override"
+		;;
+	*)
+		[ -n "$queue_depth" ] && [ "$queue_depth" -gt 1 ] || \
+			poweroff_after_failure "NCQ queue depth is not greater than one"
+		grep -q 'libata.force=noncq' /proc/cmdline && \
+			poweroff_after_failure "NCQ profile unexpectedly contains the non-NCQ override"
+		;;
+esac
+msi_count=0
+if [ -d "/sys/bus/pci/devices/$controller/msi_irqs" ]; then
+	msi_count=$(ls -1 "/sys/bus/pci/devices/$controller/msi_irqs" 2>/dev/null | wc -l)
+fi
+case "$diagnostic_profile" in
+	legacy-ncq-write|legacy-stack)
+		[ "$msi_count" -eq 0 ] || poweroff_after_failure "legacy profile unexpectedly allocated MSI"
+		grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline && \
+			poweroff_after_failure "legacy profile contains the MSI opt-in"
+		;;
+	msi-ncq-write|msi-stack|msi-noncq-stack)
+		[ "$msi_count" -eq 1 ] || poweroff_after_failure "MSI profile did not allocate exactly one vector"
+		grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline || \
+			poweroff_after_failure "MSI profile is missing the explicit opt-in"
+		;;
+esac
+
+failure_stage=capture-output
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+out_dir="/mnt/capture/captures/$stamp"
+mkdir -p "$out_dir" || poweroff_after_failure "could not create capture directory"
+log="$out_dir/controller-state.txt"
+probe_log=/run/write-probe.txt
+trace_log=/run/block-trace.txt
+
+trace_root=/sys/kernel/debug/tracing
+failure_stage=tracepoint-setup
+for event in \
+	block/block_rq_issue \
+	block/block_rq_complete \
+	libata/ata_qc_issue \
+	libata/ata_qc_complete_done \
+	libata/ata_qc_complete_failed; do
+	[ -w "$trace_root/events/$event/enable" ] || \
+		poweroff_after_failure "required tracepoint is unavailable: $event"
+done
+[ -w "$trace_root/tracing_on" ] || \
+	poweroff_after_failure "trace control is unavailable"
+[ -w "$trace_root/trace_clock" ] || \
+	poweroff_after_failure "trace clock control is unavailable"
+[ -w "$trace_root/buffer_size_kb" ] || \
+	poweroff_after_failure "trace buffer control is unavailable"
+
+echo 0 > "$trace_root/tracing_on" || \
+	poweroff_after_failure "could not stop tracing before setup"
+echo mono > "$trace_root/trace_clock" 2>/dev/null || \
+	poweroff_after_failure "could not select the monotonic trace clock"
+echo 32768 > "$trace_root/buffer_size_kb" 2>/dev/null || \
+	poweroff_after_failure "could not enlarge the trace buffer"
+: > "$trace_root/trace" || \
+	poweroff_after_failure "could not clear trace buffer"
+for event in \
+	block/block_rq_issue \
+	block/block_rq_complete \
+	libata/ata_qc_issue \
+	libata/ata_qc_complete_done \
+	libata/ata_qc_complete_failed; do
+	echo 1 > "$trace_root/events/$event/enable" || \
+		poweroff_after_failure "could not enable required tracepoint: $event"
+done
+echo 1 > "$trace_root/tracing_on" || \
+	poweroff_after_failure "could not start tracing"
+trace_enabled=1
+
+enable_scratch_write() {
+	blockdev --setrw "$target_disk" || return 1
+	for child in /sys/class/block/"$target_name"*; do
+		[ -f "$child/partition" ] || continue
+		name=$(basename "$child")
+		if [ "$name" = "$scratch_name" ]; then
+			blockdev --setrw "/dev/$name" || return 1
+		else
+			blockdev --setro "/dev/$name" || return 1
+		fi
+	done
+	[ "$(blockdev --getro "$target_disk")" = 0 ] || return 1
+	[ "$(blockdev --getro "$scratch_dev")" = 0 ] || return 1
+	for child in /sys/class/block/"$target_name"*; do
+		[ -f "$child/partition" ] || continue
+		name=$(basename "$child")
+		[ "$name" = "$scratch_name" ] && continue
+		[ "$(blockdev --getro "/dev/$name")" = 1 ] || return 1
+	done
+	return 0
+}
+
+scratch_siblings_are_read_only() {
+	for child in /sys/class/block/"$target_name"*; do
+		[ -f "$child/partition" ] || continue
+		name=$(basename "$child")
+		[ "$name" = "$scratch_name" ] && continue
+		[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || return 1
+	done
+	return 0
+}
+
+run_ext4_profile() {
+	filesystem_label=$1
+	filesystem_device=$2
+	filesystem_profile=$3
+
+	printf '\n### %s setup\n' "$filesystem_profile" >> "$probe_log"
+	if ! timeout -s KILL 60 mkfs.ext4 -F -q -L "$filesystem_label" \
+		"$filesystem_device" >> "$probe_log" 2>&1; then
+		printf '%s_result=fail-mkfs\n' "$filesystem_profile" >> "$probe_log"
+		return 1
+	fi
+	if ! scratch_siblings_are_read_only; then
+		printf '%s_result=fail-sibling-protection\n' "$filesystem_profile" >> "$probe_log"
+		return 1
+	fi
+	if ! timeout -s KILL 30 mount -t ext4 -o rw,noatime,data=ordered \
+		"$filesystem_device" "$stack_mount" >> "$probe_log" 2>&1; then
+		printf '%s_result=fail-mount\n' "$filesystem_profile" >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=1
+	printf '%s_mount=' "$filesystem_profile" >> "$probe_log"
+	awk -v path="$stack_mount" '$2 == path { print; found=1 } END { exit !found }' \
+		/proc/mounts >> "$probe_log" 2>&1 || true
+
+	timeout -s KILL 190 filesystem-sync-probe "$stack_mount" \
+		"$filesystem_profile" >> "$probe_log" 2>&1
+	filesystem_probe_rc=$?
+
+	if ! timeout -s KILL 40 umount "$stack_mount" >> "$probe_log" 2>&1; then
+		printf '%s_result=fail-unmount\n' "$filesystem_profile" >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=0
+
+	printf '\n### %s read-only fsck\n' "$filesystem_profile" >> "$probe_log"
+	timeout -s KILL 90 e2fsck -fn "$filesystem_device" >> "$probe_log" 2>&1
+	filesystem_fsck_rc=$?
+	if [ "$filesystem_probe_rc" -eq 0 ] && [ "$filesystem_fsck_rc" -eq 0 ]; then
+		printf '%s_result=pass\n' "$filesystem_profile" >> "$probe_log"
+		return 0
+	fi
+	printf '%s_result=fail probe_rc=%s fsck_rc=%s\n' \
+		"$filesystem_profile" "$filesystem_probe_rc" "$filesystem_fsck_rc" \
+		>> "$probe_log"
+	return 1
+}
+
+run_filesystem_stack_probe() {
+	: > "$probe_log"
+	printf 'stack_probe_version=1\n' >> "$probe_log"
+	printf 'stack_target=%s\n' "$scratch_dev" >> "$probe_log"
+	printf 'stack_target_size_bytes=%s\n' "$scratch_size" >> "$probe_log"
+	printf 'stack_target_sectors=%s\n' "$scratch_sectors" >> "$probe_log"
+
+	run_ext4_profile MBPTEST_PLAIN "$scratch_dev" plain-ext4 || return 1
+	cleanup_stack
+	scratch_siblings_are_read_only || {
+		printf 'stack_result=fail-sibling-protection\n' >> "$probe_log"
+		return 1
+	}
+
+	# Public, deterministic test-only key. This mapping is ephemeral and is
+	# used only to exercise the dm-crypt I/O path; it is not a LUKS volume.
+	crypt_key='000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
+	crypt_key="${crypt_key}202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+	printf '\n### dm-crypt mapping setup\n' >> "$probe_log"
+	if dmsetup info "$stack_mapping" >/dev/null 2>&1; then
+		printf 'stack_result=fail-preexisting-mapping\n' >> "$probe_log"
+		return 1
+	fi
+	if ! timeout -s KILL 30 dmsetup create "$stack_mapping" --noudevsync \
+		--table "0 $scratch_sectors crypt aes-xts-plain64 $crypt_key 0 $scratch_dev 0" \
+		>> "$probe_log" 2>&1; then
+		printf 'stack_result=fail-dmsetup-create\n' >> "$probe_log"
+		return 1
+	fi
+	stack_mapping_active=1
+	mdev -s
+	dmsetup mknodes "$stack_mapping" >> "$probe_log" 2>&1 || true
+	stack_mapper="/dev/mapper/$stack_mapping"
+	if [ ! -b "$stack_mapper" ]; then
+		printf 'stack_result=fail-mapper-node\n' >> "$probe_log"
+		return 1
+	fi
+	if [ "$(blockdev --getsize64 "$stack_mapper" 2>/dev/null)" != "$scratch_size" ]; then
+		printf 'stack_result=fail-mapper-size\n' >> "$probe_log"
+		return 1
+	fi
+
+	run_ext4_profile MBPTEST_CRYPT "$stack_mapper" dmcrypt-ext4 || return 1
+	cleanup_stack
+	printf 'stack_result=pass\n' >> "$probe_log"
+	return 0
+}
+
+trap 'cleanup_and_reprotect' 0 1 2 15
+probe_rc=1
+failure_stage=scratch-write-enable
+if enable_scratch_write; then
+	case "$diagnostic_profile" in
+		legacy-stack|msi-stack|msi-noncq-stack)
+			failure_stage=filesystem-stack-probe
+			echo "mbp-ahci: begin guarded ext4 and dm-crypt stack probe" > /dev/kmsg
+			run_filesystem_stack_probe
+			probe_rc=$?
+			echo "mbp-ahci: end guarded filesystem stack probe rc=$probe_rc" > /dev/kmsg
+			;;
+		*)
+			failure_stage=raw-write-flush-probe
+			echo "mbp-ahci: begin guarded $diagnostic_profile raw write/flush probe" > /dev/kmsg
+			timeout -s KILL 70 raw-block-sync-probe "$scratch_dev" > "$probe_log" 2>&1
+			probe_rc=$?
+			echo "mbp-ahci: end guarded $diagnostic_profile raw write/flush probe rc=$probe_rc" > /dev/kmsg
+			;;
+	esac
+else
+	printf 'error: failed to establish scratch-only write state\n' > "$probe_log"
+fi
+
+if [ "$trace_enabled" -eq 1 ]; then
+	echo 0 > "$trace_root/tracing_on"
+	cat "$trace_root/trace" > "$trace_log"
+else
+	printf 'trace_unavailable=1\n' > "$trace_log"
+fi
+
+failure_stage=post-probe-reprotection
+cleanup_and_reprotect
+trap - 0 1 2 15
+
+diagnostic_rc=0
+[ "$probe_rc" -eq 0 ] || diagnostic_rc=1
+grep -Eq 'ata_qc_issue:.*cmd=ATA_CMD_FLUSH(_EXT)?([[:space:]]|$)' \
+	"$trace_log" 2>/dev/null || diagnostic_rc=1
+grep -q 'ata_qc_complete_done:' "$trace_log" 2>/dev/null || diagnostic_rc=1
+awk '
+	/entries-in-buffer\/entries-written:/ {
+		split($3, counts, "/")
+		seen = 1
+		if (counts[1] != counts[2])
+			exit 1
+	}
+	END {
+		if (!seen)
+			exit 1
+	}
+' "$trace_log" || diagnostic_rc=1
+case "$diagnostic_profile" in
+	legacy-stack|msi-stack|msi-noncq-stack)
+		grep -Fxq 'plain-ext4_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
+		grep -Fxq 'dmcrypt-ext4_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
+		grep -Fxq 'stack_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
+		;;
+	*) grep -Fxq 'result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1 ;;
+esac
+[ "$(blockdev --getro "$target_disk" 2>/dev/null)" = 1 ] || diagnostic_rc=1
+for child in /sys/class/block/"$target_name"*; do
+	[ -e "$child" ] || continue
+	name=$(basename "$child")
+	[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || diagnostic_rc=1
+done
+
+error_log=/run/ata-error-scan.txt
+if dmesg | grep -Ei 'ata[0-9].*(exception|failed command|hard reset|hard resetting|frozen|timed out|timeout)|I/O error|blk_update_request|Buffer I/O error|EXT4-fs (error|warning)|device-mapper:.*(error|fail)|dm-crypt:.*(error|fail)' > "$error_log"; then
+	diagnostic_rc=1
+else
+	printf 'none\n' > "$error_log"
+fi
+
+collect() {
+	printf '## safety and profile\n'
+	printf 'profile=%s\n' "$diagnostic_profile"
+	printf 'kernel=%s\n' "$kernel_release"
+	printf 'command_line='; cat /proc/cmdline
+	printf 'capture_device=%s\n' "$capture_dev"
+	printf 'target_disk=%s\n' "$target_disk"
+	printf 'target_read_only_after=%s\n' "$(blockdev --getro "$target_disk" 2>/dev/null || printf unknown)"
+	printf 'scratch_partition=%s\n' "$scratch_dev"
+	printf 'scratch_partition_number=%s\n' "$scratch_partition_number"
+	printf 'scratch_gpt_name=%s\n' "$scratch_gpt_name"
+	printf 'scratch_discovery=%s\n' "$scratch_discovery"
+	printf 'scratch_read_only_after=%s\n' "$(blockdev --getro "$scratch_dev" 2>/dev/null || printf unknown)"
+	printf 'scratch_size_bytes=%s\n' "$scratch_size"
+	printf 'scratch_start_sector=%s\n' "$scratch_start"
+	printf 'partition_count=%s\n' "$partition_count"
+	printf 'controller=%s\n' "$controller"
+	printf 'queue_depth=%s\n' "$queue_depth"
+	printf 'msi_vector_count=%s\n' "$msi_count"
+	printf 'probe_rc=%s\n' "$probe_rc"
+	printf 'diagnostic_rc=%s\n' "$diagnostic_rc"
+	if [ "$diagnostic_rc" -eq 0 ]; then
+		printf 'result=pass\n'
+	else
+		printf 'result=fail\n'
+	fi
+	printf 'mounts:\n'; cat /proc/mounts
+
+	printf '\n## write probe\n'
+	cat "$probe_log"
+
+	printf '\n## ATA error scan\n'
+	cat "$error_log"
+
+	printf '\n## block trace\n'
+	cat "$trace_log"
+
+	printf '\n## DMI\n'
+	printf 'sys_vendor='; cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true
+	printf 'product_name='; cat /sys/class/dmi/id/product_name 2>/dev/null || true
+
+	printf '\n## controller\n'
+	lspci -vvnn -s "$controller" 2>&1 || true
+	printf 'msi_irqs='
+	if [ -d "/sys/bus/pci/devices/$controller/msi_irqs" ]; then
+		ls -1 "/sys/bus/pci/devices/$controller/msi_irqs" 2>/dev/null | tr '\n' ' '
+	fi
+	printf '\n'
+	cat /proc/interrupts
+
+	printf '\n## partition geometry and protection\n'
+	fdisk -l "$target_disk" 2>&1 || true
+	for child in /sys/class/block/"$target_name"*; do
+		[ -e "$child" ] || continue
+		name=$(basename "$child")
+		printf '%s read_only=' "/dev/$name"
+		blockdev --getro "/dev/$name" 2>/dev/null || printf 'unknown\n'
+		[ -r "$child/uevent" ] && cat "$child/uevent"
+	done
+
+	printf '\n## target identity and queue\n'
+	hdparm -I "$target_disk" 2>&1 || true
+	for path in \
+		"/sys/class/block/$target_name/device/queue_depth" \
+		"/sys/class/block/$target_name/queue/fua" \
+		"/sys/class/block/$target_name/queue/write_cache" \
+		"/sys/class/block/$target_name/queue/scheduler"; do
+		[ -r "$path" ] || continue
+		printf '%s: ' "$path"; cat "$path"
+	done
+
+	printf '\n## kernel log\n'
+	dmesg
+}
+
+collect 2>&1 | sanitize | tee "$log"
+printf '%s  %s\n' "$(sha256sum "$log" | cut -d' ' -f1)" \
+	"$(basename "$log")" > "$out_dir/SHA256SUMS"
+printf 'kernel=%s\nprofile=%s\nprobe_rc=%s\ndiagnostic_rc=%s\n' \
+	"$kernel_release" "$diagnostic_profile" "$probe_rc" "$diagnostic_rc" \
+	> "$out_dir/COMPLETE"
+sync
+
+echo
+if [ "$diagnostic_rc" -eq 0 ]; then
+	echo "Guarded write/flush capture complete: $out_dir"
+else
+	echo "Guarded write/flush capture FAILED: $out_dir"
+fi
+echo "The MacBook will power off in 10 seconds."
+sleep 10
+umount /mnt/capture 2>/dev/null || {
+	sync
+	sleep 2
+	umount /mnt/capture 2>/dev/null || true
+}
+capture_mounted=0
+sync
+poweroff -f
