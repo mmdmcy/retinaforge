@@ -359,5 +359,5 @@ presented as interchangeable.
    full safety QA. Stop on any fault or absent latency improvement.
 8. Convert only a proven mechanism into a production patch, then validate
    repeated boots, stress, errors, suspend, recovery, and tail latency.
-9. Start the separate graphics repository only after storage no longer blocks
-   meaningful Linux testing.
+9. Expand the in-repo graphics track under `docs/graphics/` only after storage
+   no longer blocks meaningful Linux testing.

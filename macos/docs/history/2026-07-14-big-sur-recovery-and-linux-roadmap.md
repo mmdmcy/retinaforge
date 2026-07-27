@@ -21,9 +21,9 @@ Future Linux work remains a serious goal. The preferred sequence is:
 4. submit a technically honest patch upstream if the mechanism is real;
 5. pursue storage, ACPI, and NVIDIA/GMUX contributions separately.
 
-The engineering repository is [apple-ahci-linux](https://github.com/mmdmcy/apple-ahci-linux),
+The engineering repository is [retinaforge](https://github.com/mmdmcy/retinaforge),
 and its detailed continuation plan is the
-[Linux driver and upstream roadmap](https://github.com/mmdmcy/apple-ahci-linux/blob/main/docs/linux-driver-upstream-roadmap.md).
+[Linux driver and upstream roadmap](https://github.com/mmdmcy/retinaforge/blob/main/docs/linux-driver-upstream-roadmap.md).
 
 ## Exact Hardware In Scope
 
@@ -152,7 +152,7 @@ legacy/workbench Mac and the newer machine as the safer current-software Mac.
 
 The prepared APFS strict-sync probe was later completed. Its procedure and
 current interpretation are maintained in
-[macos-fullfsync-test.md](https://github.com/mmdmcy/apple-ahci-linux/blob/main/docs/macos-fullfsync-test.md).
+[macos-fullfsync-test.md](https://github.com/mmdmcy/retinaforge/blob/main/docs/macos-fullfsync-test.md).
 
 - Fast `fsync()`, slow `F_FULLFSYNC`: the current semantics explanation is
   confirmed. There is no proven fast strict operation to expose in Linux.
