@@ -35,8 +35,8 @@ The patch is a negative diagnostic result, not a production fix.
 
 ## Repository Boundaries
 
-Keep this repository focused on storage and rename it later to
-`macbookpro11-3-ahci-latency`. It should contain:
+This repository is the single public home for the tested `MacBookPro11,3`
+work. Inside it, keep the storage track focused:
 
 - sanitized storage evidence and deterministic reproducers;
 - Linux kernel patch series that touch AHCI, libata, block I/O, or diagnostics;
@@ -44,11 +44,11 @@ Keep this repository focused on storage and rename it later to
 - package/build instructions and rollback procedures for test kernels;
 - upstream submission notes for storage maintainers.
 
-Create `macbookpro11-3-linux-graphics` later for EFI-stub `apple_set_os`, UKI
-boot, Intel/NVIDIA selection, Nouveau, GMUX, power rails, displays, thermals,
-and suspend. The CachyOS/Limine work is useful evidence for that repository,
-not evidence of an SSD fix. CachyOS still uses the upstream Linux AHCI path
-unless it carries a relevant storage patch.
+Native Big Sur workstation material lives under `macos/`. NVIDIA/GMUX planning
+lives under `docs/graphics/` and the graphics source notes. Do not mix graphics
+driver experiments into AHCI/libata patch series. The CachyOS/Limine work is
+useful graphics evidence, not evidence of an SSD fix. CachyOS still uses the
+upstream Linux AHCI path unless it carries a relevant storage patch.
 
 ## Gate 1: Determine Whether Strict Persistence Can Be Fast
 

@@ -1,21 +1,62 @@
-# Apple AHCI Linux Workbench For MacBookPro11,3 And SM1024F
+# MacBookPro11,3 Retina Workbench
 
-An open, reproducible workbench investigating severe Linux write-latency
-stalls on one tested hardware combination:
+One open repository for the Late-2013 15-inch Retina MacBook Pro configuration
+that is actually being tested. This is the centralized home for notes and
+artifacts that used to live in separate local trees.
 
 | Component | Tested target |
 | --- | --- |
 | Apple model identifier | `MacBookPro11,3` |
 | Product | 15-inch Retina MacBook Pro, Late 2013 |
+| CPU | Intel Core i7-4960HQ |
+| Memory | 16 GB DDR3L |
+| Graphics | Intel Iris Pro and NVIDIA GeForce GT 750M |
 | Internal storage | 1 TB `APPLE SSD SM1024F`, firmware `UXM6JA1Q` |
 | Storage controller | Apple/Samsung PCIe AHCI, PCI ID `144d:1600` |
-| Graphics configuration | Intel Iris Pro and NVIDIA GeForce GT 750M |
-| Known-good comparison OS | macOS Big Sur `11.7.11` |
+| Known-good host OS | macOS Big Sur `11.7.11` |
+
+Results must not be generalized to every 2013 MacBook Pro, every
+`MacBookPro11,x` variant, every Apple SSD, or every related AHCI identifier.
+
+## Tracks In This Repository
+
+| Track | Status | Where |
+| --- | --- | --- |
+| Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
+| Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
+| Linux NVIDIA / GMUX / Intel-first graphics | Deferred until storage no longer blocks Linux tests | [`docs/graphics/`](docs/graphics/README.md) |
+
+Private captures, recovery media, deal photos, raw traces, and build outputs
+stay out of Git under the local RetinaForge `local-only/` hub.
+
+## Native Big Sur Workstation
+
+Keep Big Sur as the stable host. Use MacPorts for maintained packages, compile
+compatibility builds when needed, and treat Linux as a narrow service boundary
+rather than the default desktop.
+
+Start here:
+
+- [`macos/README.md`](macos/README.md)
+- [`macos/docs/modern-workstation-plan.md`](macos/docs/modern-workstation-plan.md)
+- [`macos/docs/go-1.26.5-validation.md`](macos/docs/go-1.26.5-validation.md)
+- [`macos/patches/go-1.26.5-big-sur.patch`](macos/patches/go-1.26.5-big-sur.patch)
+
+```bash
+sudo ./macos/scripts/bootstrap-big-sur-dev.sh
+./macos/scripts/build-go-1.26.5-big-sur.sh
+```
+
+MacOS workstation material under `macos/` is BSD-3-Clause. The Go patch applies
+to upstream Go source under Go's own BSD-style license.
+
+## Linux Storage Workbench
+
+An open, reproducible investigation of severe Linux write-latency stalls on the
+exact `MacBookPro11,3` + `APPLE SSD SM1024F` combination above.
 
 This is an investigation, not a completed solution. No safe production Linux
-fix has been confirmed. Results must not be generalized to every MacBook,
-every 2013 MacBook Pro, every `MacBookPro11,x` variant, every Apple SSD, or
-every controller carrying a related AHCI identifier.
+fix has been confirmed.
 
 The project starts with Ubuntu and Linux Mint because they provide a stable
 kernel and packaging baseline. Debian, Fedora, and Arch can use the same
@@ -31,7 +72,7 @@ scratch partition. The 128 GB lab medium still holds the rejected
 MSI-plus-NCQ writable diagnostic, not macOS recovery or a normal Linux
 installer, and must not be booted casually.
 
-## Goal
+### Storage goal
 
 Determine whether this exact failure has a narrow, safe Linux fix that could
 later be evaluated on separately identified affected machines:
@@ -42,7 +83,7 @@ later be evaluated on separately identified affected machines:
 - controller-specific configuration or kernel quirks that are explicit,
   reproducible, and reversible.
 
-## Confirmed first-target failure mode
+### Confirmed first-target failure mode
 
 The first Apple/Samsung controller exposes a standard AHCI interface. Linux
 6.8 testing produced roughly 0.8-10 second durability stalls; authenticated
@@ -57,7 +98,7 @@ This repository does not assume a failing SSD, does not disable filesystem
 integrity guarantees as a default, and does not treat a new Linux distribution
 as a fix until it demonstrates a different result.
 
-## Repository layout
+### Storage layout
 
 - `scripts/collect-controller-state.sh` — sanitized controller-state capture.
 - `scripts/prepare-kernel-source.sh` — fetch and authenticate the exact signed
@@ -86,18 +127,10 @@ as a fix until it demonstrates a different result.
 - `patches/` — diagnostic, proposed, and validated kernel patches, with each
   artifact's status documented separately.
 
-## Exact First Target
-
-The first and currently only physically validated target is the
-`MacBookPro11,3` and `APPLE SSD SM1024F` combination listed above. Historical
-reproduction used Ubuntu 24.04 / Linux Mint kernel `6.8.0-134-generic`; the
-new read-only baseline uses authenticated upstream stable Linux `7.1.3`
-without installing a distribution or touching APFS.
-
 No raw machine captures belong in this repository. The collector redacts serial
 numbers by default; keep full captures locally under an ignored directory.
 
-## Current evidence
+### Current evidence
 
 The first target matches an existing upstream AHCI quirk for PCI ID
 `144d:1600`: Linux disables MSI for this Apple/Samsung controller because NCQ
@@ -133,35 +166,7 @@ See [the public findings](docs/findings.md) for the decision record and
 [the test protocol](docs/test-protocol.md) for the bounded, non-destructive
 validation procedure.
 
-## Publication boundary
-
-This repository is structured to be safe for eventual public release. Commit
-source code, sanitized technical findings, reproducible test procedures, and
-primary-source notes. Keep the following local and ignored:
-
-- raw traces, hardware dumps, logs, crash data, and complete command output;
-- hostnames, IP addresses, disk serials, UUIDs, encryption metadata, and SSH
-  state;
-- assistant/session handoffs, conversation history, and machine-specific
-  recovery diaries;
-- proprietary Apple images, extracted binaries, kernel source/build trees, and
-  package artifacts;
-- rejected code prototypes that failed their motivating experiment.
-
-Publish aggregate measurements and the smallest evidence needed to reproduce a
-claim. Never commit a raw capture merely because it appears harmless.
-
-## Safety rules
-
-1. One controller or kernel variable changes per experiment.
-2. Keep a known-good kernel boot entry before testing a new one.
-3. Never use a destructive benchmark against the root filesystem.
-4. Do not publish hostnames, IP addresses, serial numbers, encryption metadata,
-   private logs, or raw conversation transcripts.
-5. A proposed solution is not accepted until it improves measured tail latency
-   and real desktop responsiveness.
-
-## Status
+### Storage status
 
 The generic tuning and Apple-driver comparison phases are complete. Big Sur
 `11.7.11` is installed on the first target and is cool and responsive in
@@ -187,4 +192,49 @@ resumed with a lower-risk, traced stock legacy run that distinguishes libata
 queue delay from actual `FLUSH CACHE EXT` execution. The artifact passed
 deterministic build and host-side guard QA; USB provisioning, scratch
 recreation, and the physical run remain separate user-present checkpoints.
-Storage remains separate from any later NVIDIA/GMUX track.
+
+## Linux Graphics Notes
+
+Deferred. See [`docs/graphics/README.md`](docs/graphics/README.md) and the
+upstream graphics review in
+[`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md).
+
+Keep graphics evidence and AHCI/libata patch series separate even though both
+tracks share this repository.
+
+## Publication boundary
+
+This repository is structured for public release. Commit source code, sanitized
+technical findings, reproducible test procedures, and primary-source notes.
+Keep the following local and ignored:
+
+- raw traces, hardware dumps, logs, crash data, and complete command output;
+- hostnames, IP addresses, disk serials, UUIDs, encryption metadata, and SSH
+  state;
+- assistant/session handoffs, conversation history, and machine-specific
+  recovery diaries;
+- proprietary Apple images, extracted binaries, kernel source/build trees, and
+  package artifacts;
+- rejected code prototypes that failed their motivating experiment.
+
+Publish aggregate measurements and the smallest evidence needed to reproduce a
+claim. Never commit a raw capture merely because it appears harmless.
+
+## Safety rules
+
+1. One controller or kernel variable changes per experiment.
+2. Keep a known-good kernel boot entry before testing a new one.
+3. Never use a destructive benchmark against the root filesystem.
+4. Do not publish hostnames, IP addresses, serial numbers, encryption metadata,
+   private logs, or raw conversation transcripts.
+5. A proposed solution is not accepted until it improves measured tail latency
+   and real desktop responsiveness.
+6. Back up the machine and keep a known-good recovery route before compatibility
+   builds or experimental kernels.
+
+## License
+
+- Linux storage/kernel workbench material at the repository root: GPL-2.0.
+- Native Big Sur workstation material under [`macos/`](macos/): BSD-3-Clause
+  ([`macos/LICENSE`](macos/LICENSE)).
+- Third-party sources (Linux, Go) remain under their upstream licenses.

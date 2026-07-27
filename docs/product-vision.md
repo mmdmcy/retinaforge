@@ -1,25 +1,28 @@
-# Apple AHCI Linux Workbench Product Vision
+# MacBookPro11,3 Workbench Product Vision
 
 Current status: Big Sur reference environment working; macOS strict persistence
 measured fast, so a narrow Linux AHCI/libata investigation is active again.
+Native workstation notes, Linux storage work, and deferred NVIDIA/GMUX notes
+now live in this single repository.
 
-Proposed storage-repository name: `macbookpro11-3-ahci-latency`. Keep the
-existing local and remote names until the dirty worktree is reviewed and the
-rename can update links, remotes, repository metadata, and documentation
-atomically.
+This repository is the centralized public home for the tested
+`MacBookPro11,3` configuration. Do not split the human-facing notes into
+parallel untracked trees. Keep evidence tracks separate inside the repo:
 
-Create graphics work separately as `macbookpro11-3-linux-graphics` only when
-storage is no longer blocking Linux tests. The storage repository should own
-AHCI/libata evidence, strict-sync behavior, block-layer prototypes, and storage
-patches. The graphics repository should own EFI-stub `apple_set_os`, Intel-only
-boot, NVIDIA/Nouveau, GMUX, external-display, power, and suspend experiments.
-An umbrella repository is unnecessary until both projects have real artifacts
-that need a shared landing page.
+- `macos/` owns Big Sur native development and compatibility builds.
+- Root `docs/`, `scripts/`, `patches/`, and `tools/` own AHCI/libata storage
+  evidence and diagnostic kernels.
+- `docs/graphics/` plus the graphics source notes own NVIDIA/Nouveau/GMUX
+  planning until storage no longer blocks Linux tests.
+
+An extra umbrella repository is unnecessary. Separate future repository names
+are only for upstream-shaped kernel series if a maintainer process requires a
+narrower patch-only tree. Until then, keep one remoted source of truth here.
 
 ## Product Direction
 
-- Make affected Intel Apple laptops practical, secure Linux work machines
-  without replacing healthy storage hardware.
+- Make this exact Intel Apple laptop practical: usable Big Sur workstation
+  first, then a secure Linux path without replacing healthy storage hardware.
 - Prefer a narrow, measurable upstream driver correction over a permanent
   private kernel fork or a distribution-specific workaround.
 - Treat an existing upstream behavior as the preferred solution when it solves
@@ -39,6 +42,7 @@ that need a shared landing page.
   metadata, and session transcripts out of Git.
 - Publish only sanitized hardware identifiers, aggregate latency figures, and
   a reviewable patch when the work is ready for upstream discussion.
+- Keep RetinaForge `local-only/` material on the machine, never in this repo.
 
 ## Risk Positioning
 
@@ -54,13 +58,6 @@ that need a shared landing page.
 - The macOS `fsync()`/`F_FULLFSYNC` discriminator measured fast strict
   persistence, including after a cold boot; compare Apple and Linux state
   before changing Linux.
-- Compare Apple and Linux controller/cache/power/command state before writing a
-  patch; the exact missing mechanism is not yet proven.
-- Get a measurable local fix first; upstream authorship follows only after a
-  missing Linux behavior is proven and the candidate passes hardware testing.
 - Prefer contribution to upstream Linux over a permanent private kernel fork.
-- Treat AHCI storage, Apple ACPI, and NVIDIA/Nouveau/GMUX as separate upstream
-  tracks with separate evidence and patch series.
-- Use the exact DMI model in both future repository names. Do not let the
-  storage project become a general MacBook tuning collection or mix unrelated
-  storage and graphics kernel patch series.
+- Treat AHCI storage, Apple ACPI, and NVIDIA/Nouveau/GMUX as separate evidence
+  tracks with separate patch series, even while they share this repository.
