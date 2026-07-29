@@ -73,7 +73,8 @@ The 128 GB lab medium's last verified payload is the Windows Intel-enumeration
 probe, not macOS recovery or a normal Linux installer, and it must not be booted
 casually.
 See [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) for the
-storage and graphics gates.
+storage and graphics gates. For continuation on another host, start with the
+[session handoff](docs/session-handoff.md).
 
 ### Storage goal
 
