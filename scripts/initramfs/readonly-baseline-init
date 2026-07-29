@@ -17,6 +17,8 @@ export LC_ALL=C
 # "APPLE SSD SM1024F" may appear here as "APPLE SSD SM1024".
 target_model_prefix='APPLE SSD SM1024'
 target_disk=
+igpu_probe=0
+grep -q 'mbp_igpu_probe=1' /proc/cmdline && igpu_probe=1
 
 mount -t devtmpfs devtmpfs /dev
 exec </dev/console >/dev/console 2>&1
@@ -328,6 +330,56 @@ collect() {
 
 	section "PCI inventory"
 	lspci -nnk 2>&1 || true
+
+	if [ "$igpu_probe" -eq 1 ]; then
+		section "Intel-first graphics probe"
+		printf 'graphics_probe=enabled\n'
+		for module in i915 apple_gmux vga_switcheroo nouveau; do
+			if [ -d "/sys/module/$module" ]; then
+				printf 'module_%s=loaded\n' "$module"
+			else
+				printf 'module_%s=absent\n' "$module"
+			fi
+		done
+		for device in /sys/bus/pci/devices/*; do
+			[ -r "$device/vendor" ] || continue
+			[ -r "$device/device" ] || continue
+			vendor=$(cat "$device/vendor")
+			device_id=$(cat "$device/device")
+			case "$vendor:$device_id" in
+				0x8086:0x0d26|0x10de:0x0fe9|0x10de:0x0e1b)
+					printf '[%s %s:%s]\n' "$(basename "$device")" "$vendor" "$device_id"
+					if [ -L "$device/driver" ]; then
+						printf 'driver='; basename "$(readlink -f "$device/driver")"
+					else
+						printf 'driver=unbound\n'
+					fi
+					dump_readable \
+						"$device/power/control" \
+						"$device/power/runtime_status" \
+						"$device/power_state"
+					;;
+			esac
+		done
+		for connector in /sys/class/drm/*/status; do
+			[ -r "$connector" ] || continue
+			base=${connector%/status}
+			printf '[%s]\n' "$(basename "$base")"
+			dump_readable "$connector" "$base/enabled" "$base/modes"
+		done
+		for backlight in /sys/class/backlight/*; do
+			[ -e "$backlight" ] || continue
+			printf '[%s]\n' "$(basename "$backlight")"
+			dump_readable "$backlight/brightness" "$backlight/max_brightness" \
+				"$backlight/bl_power" "$backlight/type"
+		done
+		if [ -r /sys/kernel/debug/vgaswitcheroo/switch ]; then
+			printf 'vgaswitcheroo:\n'
+			cat /sys/kernel/debug/vgaswitcheroo/switch
+		else
+			printf 'vgaswitcheroo=unavailable\n'
+		fi
+	fi
 
 	controller=
 	for device in /sys/bus/pci/devices/*; do

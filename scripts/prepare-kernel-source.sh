@@ -42,7 +42,7 @@ elif [[ $(git -C "$source_dir" remote get-url origin) != "$remote" ]]; then
 fi
 
 if ! git -C "$source_dir" rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
-	git -C "$source_dir" fetch --depth=1 origin "tag $tag"
+	git -C "$source_dir" fetch --depth=1 origin tag "$tag"
 fi
 
 actual_commit=$(git -C "$source_dir" rev-parse "refs/tags/$tag^{commit}")

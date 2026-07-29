@@ -64,9 +64,10 @@ bridge between the measurements here and an actual patch or prototype.
 
 1. Keep Big Sur working and make a current backup before more destructive work.
 2. The 128 GB recovery-bootstrap USB was later erased with explicit permission
-   and became the `MBP_AHCI` lab medium. Before any new destructive work,
-   recreate and test a recovery route; do not assume that USB still has macOS
-   recovery.
+   and became the lab medium. Its last verified payload is the archived Windows
+   Intel-enumeration probe. Before any new destructive work, recreate and test
+   a recovery route; do not assume that USB still has macOS recovery or a Linux
+   storage artifact.
 3. Record the exact Big Sur version, hardware report, SSD identity, and battery
    condition without committing serial numbers or private account data.
 4. Do not reinstall Linux merely to repeat already-rejected AHCI combinations.

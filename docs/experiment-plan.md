@@ -1,11 +1,20 @@
 # Experiment Plan
 
+Status on 2026-07-29: the internal disk now contains EFI, Big Sur APFS, and
+Windows partitions, with no disposable Linux scratch partition. The Windows
+route is archived after its transient Set OS probe exposed Iris Pro but could
+not verify firmware-variable panel selection. Native Linux is now the active
+route; preserve the original SSD and pursue the guarded legacy-INTx flush trace
+before any persistent installation. The storage findings below still reject MSI
+plus NCQ writes. See [`linux-native-roadmap.md`](linux-native-roadmap.md).
+
 Status on 2026-07-25: storage-only research has resumed, but physical work
 remains gated. The temporary scratch partition has been removed; APFS fills the
 internal SSD and passed disk and volume verification. A stock legacy-INTx
-command-trace artifact is ready, while NVIDIA/GMUX remains deferred. Do not
-repartition, provision removable media, reboot the target, or run a physical
-write test without the user-present authorization checkpoints in stage 15.
+command-trace artifact is ready. Linux graphics host-side design may proceed
+separately, but do not repartition, provision removable media, reboot the
+target, or run a physical write test without the user-present authorization
+checkpoints in stage 15.
 Baseline, NCQ, FUA, cache-mode, power-management, interrupt, raw ATA opcode,
 non-NCQ FUA, and barrier experiments are complete.
 The side-by-side non-NCQ FUA kernel was rejected before installation because a

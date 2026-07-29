@@ -98,6 +98,23 @@ guessing which block flush became which hardware command.
   does not authorize rebuilding, repartitioning, provisioning USB media, or
   booting Linux.
 
+## Host Rebuild Verification
+
+On 2026-07-29, the legacy-INTx command-trace artifact was rebuilt twice from
+clean output using the authenticated Linux `v7.1.3` source at commit
+`199c9959d3a9b53f346c221757fc7ac507fbac50`. Both builds produced the same
+manifest. The stable artifact hashes are:
+
+```text
+d2888d105727f622f34bb174e3cdf14e2aaa56a3e7e792bcea6bfdbe921a6f93  EFI/BOOT/BOOTX64.EFI
+e2a4fdf0b1080d1a0582674cbab8c30cb0973cf4b9fb35a133087516cf1cd244  lab/vmlinuz
+```
+
+The rebuilt artifact passed its manifest, PE/EFI and kernel format checks,
+required tracepoint and configuration checks, synthetic ext4 and dm-crypt
+tests, copied-artifact readback, and `e2fsck`. This was host-only validation;
+no USB was provisioned and no physical test was run.
+
 ## Recheck Triggers
 
 - A new upstream change mentions `144d:1600`, Apple/Samsung SSD flush latency,

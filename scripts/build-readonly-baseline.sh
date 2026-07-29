@@ -16,6 +16,7 @@ init_script=${INIT_SCRIPT:-$repo_root/scripts/initramfs/readonly-baseline-init}
 initramfs_static_binaries=${INITRAMFS_STATIC_BINARIES:-}
 initramfs_dynamic_binaries=${INITRAMFS_DYNAMIC_BINARIES:-}
 enable_filesystem_stack=${ENABLE_FILESYSTEM_STACK:-0}
+enable_igpu_graphics=${ENABLE_IGPU_GRAPHICS:-0}
 jobs=${JOBS:-$(nproc)}
 clean=${CLEAN:-1}
 
@@ -36,10 +37,12 @@ require_command() {
 	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-for command in git make gcc install realpath ldd awk sha256sum file objdump cpio cmp \
-	find sort touch gzip grub-mkstandalone grub-script-check; do
+for command in git make gcc bison flex install realpath ldd awk sha256sum file \
+	objdump cpio cmp find sort touch gzip grub-mkstandalone grub-script-check; do
 	require_command "$command"
 done
+printf '#include <gelf.h>\n' | gcc -E -x c - >/dev/null 2>&1 || \
+	die "libelf development headers are required (missing gelf.h)"
 
 [[ $(uname -m) == x86_64 ]] || die "this appliance must be built on x86_64"
 [[ -e $kernel_source/.git ]] || die "kernel source not found: $kernel_source"
@@ -99,6 +102,8 @@ else
 fi
 [[ $enable_filesystem_stack == 0 || $enable_filesystem_stack == 1 ]] || \
 	die "ENABLE_FILESYSTEM_STACK must be 0 or 1"
+[[ $enable_igpu_graphics == 0 || $enable_igpu_graphics == 1 ]] || \
+	die "ENABLE_IGPU_GRAPHICS must be 0 or 1"
 install -d -m 0755 \
 	"$kernel_out" \
 	"$initramfs_root/bin" \
@@ -172,7 +177,6 @@ make -C "$kernel_source" O="$kernel_out" LOCALVERSION= x86_64_defconfig
 	-d LOCALVERSION_AUTO \
 	-e MODULES \
 	-d DRM_NOUVEAU \
-	-m DRM_I915 \
 	-d HIBERNATION \
 	-e IKCONFIG \
 	-e IKCONFIG_PROC \
@@ -217,6 +221,17 @@ make -C "$kernel_source" O="$kernel_out" LOCALVERSION= x86_64_defconfig
 	-e SENSORS_APPLESMC \
 	-e SENSORS_CORETEMP
 
+if [[ $enable_igpu_graphics == 1 ]]; then
+	"$kernel_source/scripts/config" --file "$kernel_out/.config" \
+		-e DRM_I915 \
+		-e APPLE_GMUX \
+		-e FB \
+		-e VGA_SWITCHEROO
+else
+	"$kernel_source/scripts/config" --file "$kernel_out/.config" \
+		-m DRM_I915
+fi
+
 if [[ $enable_filesystem_stack == 1 ]]; then
 	"$kernel_source/scripts/config" --file "$kernel_out/.config" \
 		-e EXT4_FS \
@@ -225,7 +240,6 @@ if [[ $enable_filesystem_stack == 1 ]]; then
 		-e CRYPTO_XTS \
 		-e CRYPTO_AES_NI_INTEL
 fi
-
 make -C "$kernel_source" O="$kernel_out" LOCALVERSION= olddefconfig
 make -C "$kernel_source" O="$kernel_out" LOCALVERSION= prepare
 
@@ -254,6 +268,16 @@ if [[ $enable_filesystem_stack == 1 ]]; then
 		'CONFIG_CRYPTO_AES_NI_INTEL=y'; do
 		grep -Fxq "$setting" "$kernel_out/.config" || \
 			die "missing filesystem-stack kernel setting: $setting"
+	done
+fi
+if [[ $enable_igpu_graphics == 1 ]]; then
+	for setting in \
+		'CONFIG_DRM_I915=y' \
+		'CONFIG_APPLE_GMUX=y' \
+		'CONFIG_FB=y' \
+		'CONFIG_VGA_SWITCHEROO=y'; do
+		grep -Fxq "$setting" "$kernel_out/.config" || \
+			die "missing Intel graphics kernel setting: $setting"
 	done
 fi
 grep -Fxq "CONFIG_INITRAMFS_SOURCE=\"$(basename "$initramfs_archive")\"" "$kernel_out/.config" || \

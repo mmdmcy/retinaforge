@@ -24,7 +24,8 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux NVIDIA / GMUX / Intel-first graphics | Deferred until storage no longer blocks Linux tests | [`docs/graphics/`](docs/graphics/README.md) |
+| Linux Intel-first graphics / GMUX | Active research; daily use gated on storage and power-management evidence | [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) and [`docs/graphics/`](docs/graphics/README.md) |
+| Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs
 stay out of Git under the local RetinaForge `local-only/` hub.
@@ -63,14 +64,16 @@ kernel and packaging baseline. Debian, Fedora, and Arch can use the same
 reproduction and validation harness later; changing distributions alone is not
 assumed to change the underlying `ahci` driver path.
 
-Project status on 2026-07-25: storage-only research has resumed, while
-NVIDIA/GMUX work remains deferred. The test Mac is on Big Sur `11.7.11`; APFS
-fills the internal SSD and no custom Linux kernel is installed internally. A
-reproducible stock legacy-INTx command-trace artifact is ready for the next
-measurement, but no USB has been reprovisioned and the Mac has no disposable
-scratch partition. The 128 GB lab medium still holds the rejected
-MSI-plus-NCQ writable diagnostic, not macOS recovery or a normal Linux
-installer, and must not be booted casually.
+Project status on 2026-07-29: the Windows GMUX route is archived and native
+Linux is the active route. The test Mac is on Big Sur `11.7.11`; APFS fills the
+internal SSD and no custom Linux kernel is installed internally. A reproducible
+stock legacy-INTx command-trace artifact is ready for the next measurement, but
+no USB has been reprovisioned and the Mac has no disposable scratch partition.
+The 128 GB lab medium's last verified payload is the Windows Intel-enumeration
+probe, not macOS recovery or a normal Linux installer, and it must not be booted
+casually.
+See [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) for the
+storage and graphics gates.
 
 ### Storage goal
 

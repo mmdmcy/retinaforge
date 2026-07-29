@@ -65,6 +65,9 @@ scripts/prepare-kernel-source.sh
 scripts/build-readonly-baseline.sh
 ```
 
+The kernel build requires `bison`, `flex`, and the libelf development headers.
+The builder checks these prerequisites before creating its output tree.
+
 The ignored artifact directory contains:
 
 ```text

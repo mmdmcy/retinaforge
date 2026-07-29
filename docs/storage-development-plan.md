@@ -267,12 +267,12 @@ latency probes. Real filesystem workloads against the internal SSD require a
 dedicated disposable internal test partition created only after a verified
 backup.
 
-The former recovery-bootstrap USB was already repurposed with explicit
-permission as the `MBP_AHCI` lab medium. Its last recorded profile is the
-rejected MSI-plus-NCQ writable diagnostic. Before another physical write test,
-create and verify a recovery route and deliberately reprovision the lab USB.
-Do not test destructive writes against the APFS container or working macOS
-volume.
+The former recovery-bootstrap USB was repurposed with explicit permission as
+the lab medium. Its last verified payload is the archived Windows
+Intel-enumeration probe, not the old `MBP_AHCI` writable diagnostic. Before
+another physical write test, create and verify a recovery route and deliberately
+reprovision the lab USB with a freshly validated Linux artifact. Do not test
+destructive writes against the APFS container or working macOS volume.
 
 The first stage is intentionally smaller than a Linux distribution: the
 external appliance in
@@ -359,5 +359,6 @@ presented as interchangeable.
    full safety QA. Stop on any fault or absent latency improvement.
 8. Convert only a proven mechanism into a production patch, then validate
    repeated boots, stress, errors, suspend, recovery, and tail latency.
-9. Expand the in-repo graphics track under `docs/graphics/` only after storage
-   no longer blocks meaningful Linux testing.
+9. Develop the in-repo graphics plan under `docs/graphics/` in parallel, but
+   keep physical graphics tests separate from the storage trace and do not treat
+   a graphics result as authorization to install Linux internally.

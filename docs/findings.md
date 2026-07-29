@@ -309,6 +309,24 @@ GPU remains powered. Reuse the upstream mechanism and recovery discipline, not
 the scripts verbatim. See the
 [complete source review](source-notes/2026-07-15-macbookpro11-3-cachyos-review.md).
 
+The later Windows Set OS probe physically confirmed one part of that
+architecture on this target. Iris Pro 5200 enumerated, loaded its existing
+signed Intel driver, and reported no PnP problem when Windows was chainloaded
+through rEFInd. NVIDIA remained the 2880x1800 panel owner and returned to P8.
+Removing the USB and booting Windows directly restored NVIDIA-only enumeration.
+
+Panel selection did not pass its verification gate. Windows reported successful
+Apple `gpu-power-prefs` writes but denied runtime readback, so no Intel-panel
+boot was attempted. An explicit dedicated recovery write followed by a direct
+boot restored the known NVIDIA-only state. No GMUX power command was issued.
+
+For future cooling work, Linux is technically closer to the macOS graphics
+stack because upstream already coordinates Apple Set OS, `i915`, `apple-gmux`,
+VGA switcheroo, and resume. The internal Apple SSD remains a separate blocker:
+stock legacy INTx has long flush tails and MSI plus NCQ writes are rejected.
+An external USB SSD may be useful only for a non-production graphics lab; it
+does not satisfy the active goal of native Linux on the original internal SSD.
+
 ## Contribution Boundary
 
 Storage, Apple ACPI, and NVIDIA/Nouveau/GMUX are separate upstream tracks. A
