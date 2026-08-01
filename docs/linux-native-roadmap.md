@@ -30,22 +30,24 @@ acceptance gates. Passing one does not imply the other passes.
   `199c9959d3a9b53f346c221757fc7ac507fbac50`, with Greg Kroah-Hartman's
   expected signing fingerprint.
 - `scripts/build-filesystem-stack.sh` builds the stock `legacy-stack` trace
-  artifact. Its rebuilt kernel hash is
-  `e2a4fdf0b1080d1a0582674cbab8c30cb0973cf4b9fb35a133087516cf1cd244`.
+  artifact. Two clean 2026-07-30 builds were byte-identical and produced kernel
+  hash `68b0c19409eafc19c955da74f3cd06169ca6f73a750cf7b0157d86998805e71f`.
 - `scripts/initramfs/write-ab-init` enables block and libata issue/completion
   tracepoints, runs plain ext4 and dm-crypt plus ext4 workloads, verifies
   artifact/capture integrity, and reprotects every internal partition after
   the test.
 
-The artifact deliberately refuses to run unless it finds an exact disposable
-`MBPTEST` partition: partition 3 of the identified Apple SSD, in the final ten
-percent of the disk, sized from 4 to 16 GiB, with all siblings read-only. The
-former scratch partition was removed and full-size APFS was restored. Therefore
-the artifact is valid and intentionally blocked, not stale or broken.
+The current artifact embeds the exact target size, partition count, partition
+number, start sector, and sector count of the approved historical `MBPTEST`
+geometry. It requires a newly created partition to match all of them and to be
+the final 4-16 GiB child of the identified Apple SSD, with all siblings
+read-only. No scratch partition exists now, so the appliance will fail closed
+if booted in the current layout.
 
-The 128 GB lab USB's last verified payload is the archived Windows
-Intel-enumeration probe. Any Linux boot must deliberately replace it only after
-the Linux artifact has passed its own rebuild, checksum, and writer checks.
+The 128 GB lab USB now contains the verified appliance on its 1 GiB FAT lab
+partition. The writer preserved its separate APFS data partition, performed
+write-time and independent read-only artifact checks, and left the APFS block
+device read-only on the Linux host. No physical Linux boot has occurred.
 
 ### Graphics baseline
 
@@ -81,34 +83,37 @@ write cache lie, or re-enabling MSI plus NCQ writes.
 
 The trace needs a physical durable-write workload on the internal controller.
 A loop image, VM, APFS mount, or external USB filesystem cannot supply that
-measurement. Before any partition operation:
+measurement. The current USB already embeds the historical scratch contract, so
+prefer recreating that exact geometry and skipping rebuild/reprovision.
 
-1. Capture and verify the current GPT/APFS/Windows layout and backups.
+Before any partition operation:
+
+1. Capture and verify the current GPT/APFS layout read-only.
 2. Obtain explicit user approval for one small final internal scratch partition.
-3. Record its exact number, start sector, size, GPT name, and intended removal
-   procedure.
-4. Update the guard with those exact recorded values, review it, rerun synthetic
-   safety tests, and reproduce the artifact before provisioning media.
+3. Create final `MBPTEST` matching parent `1954210120` sectors, partition 3,
+   start `1937909760`, length `16300032` sectors when possible.
+4. Inventory the real start/size/name. Rebuild and reprovision only if those
+   values cannot match the already embedded command line.
 
 This is the only planned internal-disk mutation. It is a temporary test volume,
-not a Linux installation and never an APFS or Windows filesystem.
+not a Linux installation and never an APFS volume. Big Sur remains the bootable
+fallback on the APFS container.
 
 ### 3. Establish Linux Intel-first graphics independently
 
-Host-side work can proceed without touching the MacBook. The first physical
-graphics boot must be a separate read-only EFI-stub/UKI appliance that:
+**Status 2026-08-01: panel ownership gate passed** on the internal dual-boot
+CachyOS/Limine UKI path. Evidence:
+[`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](source-notes/2026-08-01-intel-panel-and-display-path.md).
 
-- invokes upstream Apple Set OS through the kernel EFI stub;
-- leaves `gpu-power-prefs`, GMUX registers, internal EFI, and the internal disk
-  untouched;
-- records whether both GPUs enumerate, `i915` binds, the panel has an Intel
-  connector, and Apple GMUX/backlight initialize; and
-- retains direct Big Sur and direct Windows recovery paths.
+Remaining graphics gates (still open):
 
-Only after that succeeds may a separate, user-present panel-routing design be
-reviewed. It must write the firmware preference atomically and verify it from
-an environment where Apple firmware permits readback. The rejected Windows
-runtime writer is not reusable.
+- measured discrete rail-off vs switcheroo `OFF` only;
+- suspend/resume with Intel panel ownership;
+- native GT 750M external outputs (separate from USB DisplayLink);
+- no claim of macOS-equivalent automatic switching.
+
+Host-side UKI/Apple Set OS design notes remain in the 2026-07-24 graphics
+source note. Do not reopen live GMUX forcing after black-screen incidents.
 
 ### 4. Prove discrete-GPU power behavior
 
@@ -131,10 +136,11 @@ rail-off before the GMUX handler and GPU/HDA driver sequence prove it.
 ## Near-Term Order
 
 1. Keep Big Sur and Windows operational as recovery references.
-2. Rebuild and recheck the existing stock legacy-INTx trace artifact when
-   needed; no hardware action is implied.
+2. Keep validating the stock legacy-INTx trace harness without creating a
+   geometry-free boot artifact.
 3. Design and host-validate the read-only EFI-stub/UKI Intel-enumeration
    appliance.
-4. When explicitly approved, recreate a guarded scratch target and capture the
-   physical flush trace.
+4. When explicitly approved, create and inventory a guarded scratch target,
+   build two identical geometry-bound artifacts, provision the verified lab
+   USB at a separate checkpoint, and capture the physical flush trace.
 5. Follow the trace result, not a predetermined driver theory.

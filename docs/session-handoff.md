@@ -1,76 +1,69 @@
-# Session Handoff
+# Next Session Handoff
 
-## Current Direction
+Last updated: 2026-08-01 (Intel panel path validated; graphics note published)
 
-Native Linux on the original Apple SSD is the active route. Windows graphics
-work is archived as hardware evidence, not an active implementation path. Do
-not replace the SSD, weaken durable-write semantics, or treat an external SSD
-as a solution for the intended installation.
+Private operational checklist for agents. Public science lives in
+`docs/findings.md` and `docs/source-notes/2026-08-01-intel-panel-and-display-path.md`.
+Do not copy hostnames, addresses, keys, or conversation text into publishable
+files.
 
-Use a designated stronger Linux build host for kernel compilation. Keep a
-low-resource controller for source review, manifests, and small checks only.
-The repository is intended to be cloned normally on the build host; ignored
-`build/` artifacts are reproducible and are not transferred between hosts.
+## Machine layout
 
-## Latest Host-Validated Artifact
+| Part | Role |
+| --- | --- |
+| sda1 | Apple EFI |
+| sda2 | Big Sur APFS (preserve) |
+| sda3 | Linux ESP / Limine `/boot` |
+| sda4 | CachyOS ext4 root |
 
-The read-only direct-EFI Linux Intel-enumeration appliance was built from the
-authenticated Linux `v7.1.3` source commit
-`199c9959d3a9b53f346c221757fc7ac507fbac50`.
+Big Sur and CachyOS both remain bootable. Re-inventory before repartitioning.
 
-```text
-artifact: build/linux-igpu-readonly-v7.1.3/artifact/
-kernel:   bb42109c8465de1f141b75deb1307626095b82f4dfb0326a979ad5ed00a898fb
-EFI stub: d2888d105727f622f34bb174e3cdf14e2aaa56a3e7e792bcea6bfdbe921a6f93
-```
+## Graphics (verified 2026-08-01)
 
-The manifest, direct-EFI PE format, and built-in `i915`, `apple-gmux`,
-framebuffer, and VGA-switcheroo configuration checks passed. This is only a
-host artifact. It has not been provisioned to removable media or booted on the
-MacBook.
+1. macOS: `gpu-power-prefs` Intel `%01%00%00%00` (do not rely on Linux writes).
+2. Limine **default_entry** = UKI / EFI-stub **CachyOS Intel probe** (not bare
+   `protocol: linux`).
+3. Expect `i915drmfb`, eDP 2880×1800, switcheroo IGD selected.
+4. After boot, confirm DIS `OFF` via switcheroo if thermals matter; DIS may
+   return to `Pwr` across sessions.
+5. Never live-force IGD / careless mux handoff (black screen history).
 
-To reproduce it on the designated Linux build host, install the dependencies
-reported by the builders, prepare the authenticated source, then build:
+Research write-up:
+[`source-notes/2026-08-01-intel-panel-and-display-path.md`](source-notes/2026-08-01-intel-panel-and-display-path.md).
 
-```bash
-scripts/prepare-kernel-source.sh
-CLEAN=1 JOBS="$(nproc)" scripts/build-linux-igpu-readonly-probe.sh
-```
+## Linux lab desktop notes
 
-Do not start a new build merely as a routine check. Rebuild only after a source
-or appliance change, or when a freshly verified removable-media artifact is
-explicitly needed.
+- Prefer **Xfce/X11** over Plasma for stability on this multi-GPU setup.
+- Set DRM device preference to the Intel card when both GPUs enumerate.
+- DisplayLink: masked/off by default; on-demand helpers
+  `present-on` / `present-layout` / `present-off` (USB dock path; dGPU not
+  required). Dual DisplayLink is hot — presenting only.
+- Lid/suspend ignore + masked sleep targets were configured for long SSH lab
+  sessions; lid-closed cooling is still poor — avoid heavy load.
 
-## Physical-Test Boundaries
+## Hard stops (unchanged)
 
-- No USB, internal SSD, EFI variable, GMUX, boot-order, or panel-routing action
-  is authorized without an explicit user-present request.
-- The current lab USB's last verified payload is the archived Windows
-  Intel-enumeration probe. It must be deliberately reprovisioned for Linux;
-  never assume it contains recovery media or a Linux artifact.
-- The guarded strict-flush trace intentionally refuses to run until an approved
-  disposable `MBPTEST` partition exists on the internal SSD. No such partition
-  exists now.
-- A successful Intel enumeration does not prove internal-panel ownership,
-  discrete-GPU rail-off, suspend/resume, or a safe permanent Linux install.
-- Preserve direct Big Sur and direct Windows boot paths as recovery references.
+- Writable MSI + NCQ: never for samples.
+- No casual USB reprovision, repartition, or physical write tests without a
+  fresh user-present checkpoint.
+- Do not mix storage and NVIDIA/GMUX changes in one patch or one experiment.
 
-## Next Engineering Work
+## Access (private)
 
-1. On the stronger Linux host, inspect the checked-out source and dependencies
-   without rebuilding. Keep the host workspace clean and use ignored `build/`
-   output there.
-2. Complete host-only validation for the Intel-enumeration artifact and review a
-   separate guarded Linux USB writer and user-present procedure. The writer
-   must identify one removable whole disk, require an exact confirmation token,
-   verify source and readback checksums, and leave the internal disk untouched.
-3. Keep the graphics boot separate from the storage experiment. Its first
-   physical run is read-only and records GPU binding, connector, backlight, PCI
-   power, and VGA-switcheroo state only.
-4. Only after separate approval and a verified recovery route, create the
-   temporary scratch partition needed for the existing legacy-INTx strict-flush
-   trace. Use its timing result to choose the next storage investigation.
+- Same LAN host for macOS and Linux (whichever is booted).
+- macOS SSH: `known_hosts_macos_mbp` + existing ed25519 key.
+- Linux SSH: `known_hosts_cachyos` + same key family; passwordless sudo on the
+  Linux lab user.
+- Agent may reboot the Linux lab OS and reconnect when that OS is the running
+  system.
 
-Read [`linux-native-roadmap.md`](linux-native-roadmap.md) before making a
-hardware change. The Windows archive is at
-[`archive/windows/README.md`](archive/windows/README.md).
+## Next useful experiments (pick one; do not combine)
+
+1. Suspend/resume with Intel panel ownership + DIS `OFF`; record failures.
+2. Native GT 750M outputs (Nouveau or documented proprietary) — separate from
+   DisplayLink.
+3. Measure whether switcheroo `OFF` equals GMUX rail-off (instrumented).
+4. Storage: only if explicitly reopened — ext4-on-dm-crypt flush isolation.
+
+Default when unsure: leave APFS alone, boot Big Sur, read the 2026-08-01
+graphics note before changing NVRAM or Limine.

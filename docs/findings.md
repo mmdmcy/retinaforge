@@ -1,6 +1,6 @@
 # Public Technical Findings
 
-Last updated: 2026-07-25
+Last updated: 2026-08-01
 
 This document contains the sanitized engineering record suitable for public
 review. Raw traces, serial numbers, UUIDs, network details, private operational
@@ -264,68 +264,177 @@ prepared as one final queue-depth-1 compatibility branch, but its second
 deterministic build was canceled and it was never physically run. It remains
 an experiment, not a ready artifact or solution.
 
-## Restored Daily-Driver State And Pause
+## Restored Daily-Driver State And Command-Trace Result
 
-After testing, the temporary 8.3 GB final partition was removed from macOS and
-the adjacent APFS physical store was expanded from 992.0 GB to the remaining
-disk. The final physical map contains only a 209.7 MB EFI partition and a 1.0
-TB APFS container with capacity 1,000,345,825,280 bytes. The GPT partition map
-and both the sealed system and Data APFS volumes passed read-only verification.
+After earlier storage tests, the temporary scratch partition was removed and
+later recreated for the 2026-07-30 legacy command-trace boot. The target still
+runs Big Sur `11.7.11` with no internally installed Linux system or custom
+kernel. Graphics work remains deferred. Writable MSI plus NCQ must not be
+repeated unchanged.
 
-The target now runs Big Sur `11.7.11`; no Linux system or custom kernel is
-installed internally. Storage-only research resumed on 2026-07-24, while
-graphics work remains deferred. The highest-value safe next measurement is
-libata issue-to-completion timing for actual flush commands on the legacy-INTx
-stack. A deterministic, fail-closed artifact for that measurement is ready,
-but no USB was provisioned and no physical test was run because the SSD
-currently has no disposable scratch partition. Writable MSI plus NCQ must not
-be repeated unchanged. The separate MSI-plus-forced-non-NCQ branch remains
-unrun and is not the next test.
+The stock legacy-INTx filesystem-stack appliance completed its physical run on
+authenticated Linux `7.1.3` with block and libata flush timing enabled. Both
+plain ext4 and ephemeral dm-crypt plus ext4 passed readback and read-only
+fsck. There were no ATA exceptions, failed commands, timeouts, resets, or
+trace-buffer overflow. Measured samples matched the earlier stack shape:
+
+| Profile | Median 1 MiB write | Median `fdatasync()` | Maximum measured `fdatasync()` |
+| --- | ---: | ---: | ---: |
+| plain ext4 | 1.046 ms | 11.555 ms | 12.106 ms |
+| dm-crypt plus ext4 | 1.036 ms | 1.137 s | 1.157 s |
+
+Across 112 matched `ATA_CMD_FLUSH_EXT` samples, the analyzer split end-to-end
+block flush latency as:
+
+| Interval | p50 | p95 | maximum |
+| --- | ---: | ---: | ---: |
+| block flush end-to-end | 18.732 ms | 1.133 s | 1.133 s |
+| block issue to ATA issue | 0.004 ms | 0.008 ms | 3.309 ms |
+| ATA issue to completion | 18.710 ms | 1.133 s | 1.133 s |
+
+The slow tail is therefore device/controller time after Linux has already
+issued `ATA_CMD_FLUSH_EXT`. It is not a libata pre-issue scheduling delay.
+
+### AHCI register sampling around long flushes
+
+A follow-up flush-reg-stack boot on 2026-07-30 sampled AHCI registers while
+`FLUSH CACHE EXT` was outstanding (`libahci.mbp11_3_flush_reg_sample=1`). The
+stack probe passed again (`probe_rc=0`, `diagnostic_rc=0`) with no ATA
+exceptions, timeouts, or resets. Userspace BAR sampling remains unusable while
+`ahci` owns the MMIO region; the in-kernel path is authoritative.
+
+Across 112 flushes, 26 were long (complete age ≥ 100 ms; ages about
+1.086-1.133 s). Every long flush kept its `PxCI` tag bit set at the 50, 100,
+500, and 1000 ms timer samples until completion. Verdict: `ci_held`. No
+`ci_cleared_early` long flush appeared.
+
+Matched block/libata timing on the same capture:
+
+| Interval | p50 | p95 | maximum |
+| --- | ---: | ---: | ---: |
+| block flush end-to-end | 20.717 ms | 1.136 s | 1.136 s |
+| block issue to ATA issue | 0.005 ms | 0.009 ms | 0.011 ms |
+| ATA issue to completion | 18.113 ms | 1.133 s | 1.134 s |
+
+Interpretation: the ~1.1 s durable-write tax is not a late Linux IRQ/completion
+observation bug. The AHCI command slot remains issued for essentially the whole
+interval. Combined with Big Sur's millisecond-class `F_FULLFSYNC`, this points
+at a Linux-versus-Darwin command-pattern or firmware-path difference under
+sustained filesystem flush load, not a simple INTx completion fix and not media
+failure. A normal Mint or Arch install on stock AHCI can boot and stay
+error-free, but should expect the same slow flush tails under durable write
+pressure. Do not treat a newer distro kernel alone as a cure unless it changes
+that path with evidence.
+
+Further work follows
+[`flush-pattern-comparison.md`](flush-pattern-comparison.md). Linux baseline
+from the flush-reg capture: 112 `FLUSH_EXT`, 571 `FPDMA_WRITE`, 26 long
+flushes all `ci_held`, flush completion p50 18.113 ms / p95 1.133 s.
+
+### Darwin vs Linux pattern table (2026-07-30)
+
+Same internal SSD. Darwin probe ran over SSH on Big Sur `11.7.11` APFS Data
+(`tools/macos-flush-pattern-probe.c`). Linux numbers are from the flush-reg
+stack capture.
+
+| Metric | Linux stack | Darwin isolated `F_FULLFSYNC` | Darwin sustained `F_FULLFSYNC` (64×1 MiB) | Darwin flush-only |
+| --- | ---: | ---: | ---: | ---: |
+| median sync/flush ms | 18.113 | 5.342 | 6.323 | 0.003 |
+| p95 sync/flush ms | 1132.71 | 14.701 | 6.850 | 0.036 |
+| max sync/flush ms | 1133.503 | 14.701 | 11.046 | 20.640 |
+| long (≥100 ms) count | 26 | 0 | 0 | 0 |
+
+Darwin never entered the ~1.1 s mode under sustained write+`F_FULLFSYNC` or
+flush-only. Hypothesis selected:
+`darwin_stays_fast_under_sustained_fullfsync_while_linux_has_long_flushes`
+and
+`linux_slow_path_likely_depends_on_write_plus_flush_mix_or_fs_pattern`.
+
+### Linux Darwin-mirror result (2026-07-30)
+
+Physical flush-reg boot with a sustained phase before the stack
+(`captures/2026-07-30-sustained-mirror-physical/`, `probe_rc=0`):
+
+| Phase | Median `fdatasync` | P95 | Max | long ≥100 ms (userspace) |
+| --- | ---: | ---: | ---: | ---: |
+| sustained darwin-mirror (64×1 MiB, plain ext4) | 18.795 ms | 19.418 ms | 19.544 ms | 0 |
+| plain-ext4 stack probe (12×1 MiB) | 17.851 ms | 18.849 ms | 18.849 ms | 0 |
+| dm-crypt+ext4 stack probe (12×1 MiB) | 1.150 s | 1.182 s | 1.182 s | all measured samples long |
+
+The simple Darwin-like write+durable-sync pattern on plain ext4 is already
+millisecond-class on this SSD under Linux (~19 ms). The ~1.1 s `ci_held` tax
+shows up in the heavier stack path (here dm-crypt+ext4 measured samples), not
+in the mirror pattern itself.
+
+### dm-crypt raw vs ext4-on-crypt (2026-07-30)
+
+Physical split boot
+(`captures/2026-07-30-dmcrypt-raw-split-physical/`, `probe_rc=0`):
+
+| Phase | Median durable sync | Max | userspace long ≥100 ms |
+| --- | ---: | ---: | ---: |
+| sustained darwin-mirror (plain ext4) | 18.587 ms | 19.475 ms | 0 |
+| plain-ext4 (12×1 MiB) | 17.921 ms | 18.818 ms | 0 |
+| **dmcrypt-raw** (mapper write+`fdatasync`, no FS) | **9.557 ms** | 26.442 ms | **0** |
+| **dmcrypt-ext4** (ext4 on same mapper) | **1.150 s** | 1.176 s | all measured samples |
+
+dm-crypt alone is fast on this SSD. The ~1.1 s tax appears when **ext4 runs on
+dm-crypt**, not from the crypt mapper path by itself. Long `ci_held` flushes
+remain overall (`33` this run), but none fell inside the dmcrypt-raw measured
+window. Next: isolate ext4-on-crypt behavior (journal/barrier/flush
+amplification through the mapper), not another raw-crypt reproof.
 
 ## Related `MacBookPro11,3` Graphics Work
+
+### Verified Intel panel path (2026-08-01)
+
+On this exact dual-GPU Retina machine, a Linux session with **Intel-owned
+internal eDP (2880×1800, `i915drmfb`)** was obtained by combining:
+
+1. Limine boot of a **UKI / EFI-stub** image so upstream `apple_set_os()` runs;
+2. Apple `gpu-power-prefs` set to Intel (`%01%00%00%00`) **from macOS** (Linux
+   remains an unreliable writer/readback path for this variable);
+3. optional VGA switcheroo `OFF` for the discrete client after IGD owns the
+   panel (cooler idle than leaving DIS powered).
+
+Stock Limine entries that use `protocol: linux` (no EFI stub) did **not**
+provide the Intel-first path. Live GMUX / forced-IGD handoff mid-session
+caused black screens and is rejected as an operator procedure.
+
+Full methods, negatives, and DisplayLink results:
+[`source-notes/2026-08-01-intel-panel-and-display-path.md`](source-notes/2026-08-01-intel-panel-and-display-path.md).
+
+### External displays
+
+USB **DisplayLink** dual 1080p outputs worked with the GT 750M left off.
+Sustained dual-DisplayLink desktops were CPU-heavy and hot; treat as
+occasional presenting, not an all-day policy. Native GT 750M DP/HDMI bring-up
+was not claimed in the 2026-08-01 run and remains a separate experiment. This
+narrows an earlier over-broad assumption that external pixels always require
+the discrete GPU on this generation.
+
+### Prior architecture reviews (still valid)
 
 The public
 [`joaodriessen/macbookpro11-3-cachyos`](https://github.com/joaodriessen/macbookpro11-3-cachyos)
 repository documents an Intel-only CachyOS/UKI/Limine configuration for the
-same Mac model and Iris Pro/GT 750M layout. Its strongest contribution to this
-workbench is a graphics architecture based on upstream Linux behavior:
-
-1. chainload a UKI as an EFI application so the kernel EFI stub runs;
-2. let upstream `apple_set_os()` keep the firmware-hidden iGPU enabled;
-3. select the iGPU through Apple's `gpu-power-prefs` EFI variable;
-4. verify Intel panel ownership before making driver policy persistent.
+same model class. Reuse the upstream mechanism (EFI stub + Set OS + prefs),
+not machine-specific scripts verbatim. See
+[complete source review](source-notes/2026-07-15-macbookpro11-3-cachyos-review.md)
+and
+[upstream graphics note](source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md).
 
 Upstream commit
 [`71e49eccdca6`](https://github.com/torvalds/linux/commit/71e49eccdca6328eecc335ed8f5557bd0ed70fc6)
-explicitly includes `MacBookPro11,3`. Linux 6.8 predates that support, and a
-2025 follow-up added a fallback product-name lookup for Apple EFI firmware.
-Future graphics testing should use a kernel containing both changes.
+explicitly includes `MacBookPro11,3`. Prefer kernels that include that support
+and the later product-name fallback.
 
-The reviewed repository does not address AHCI or identify an SSD, so it does
-not weaken the storage findings. Its scripts are machine-specific and contain
-hardcoded kernel/root values. They also conflate driver blacklisting with full
-dGPU power-off even though their own D3cold investigation says the driverless
-GPU remains powered. Reuse the upstream mechanism and recovery discipline, not
-the scripts verbatim. See the
-[complete source review](source-notes/2026-07-15-macbookpro11-3-cachyos-review.md).
+Windows Set OS probing on this target enumerated Iris Pro when chainloaded
+appropriately, but did not verify Intel panel ownership (`gpu-power-prefs`
+readback failed). See `docs/graphics/windows-intel-probe.md`.
 
-The later Windows Set OS probe physically confirmed one part of that
-architecture on this target. Iris Pro 5200 enumerated, loaded its existing
-signed Intel driver, and reported no PnP problem when Windows was chainloaded
-through rEFInd. NVIDIA remained the 2880x1800 panel owner and returned to P8.
-Removing the USB and booting Windows directly restored NVIDIA-only enumeration.
-
-Panel selection did not pass its verification gate. Windows reported successful
-Apple `gpu-power-prefs` writes but denied runtime readback, so no Intel-panel
-boot was attempted. An explicit dedicated recovery write followed by a direct
-boot restored the known NVIDIA-only state. No GMUX power command was issued.
-
-For future cooling work, Linux is technically closer to the macOS graphics
-stack because upstream already coordinates Apple Set OS, `i915`, `apple-gmux`,
-VGA switcheroo, and resume. The internal Apple SSD remains a separate blocker:
-stock legacy INTx has long flush tails and MSI plus NCQ writes are rejected.
-An external USB SSD may be useful only for a non-production graphics lab; it
-does not satisfy the active goal of native Linux on the original internal SSD.
+Storage remains a separate track: legacy INTx long flushes and the hard stop
+on writable MSI+NCQ are unchanged by these graphics results.
 
 ## Contribution Boundary
 
