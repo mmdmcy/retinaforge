@@ -173,9 +173,10 @@ This is a design, not authorization to mutate the machine.
 - A native Intel-first Linux laptop is technically credible without writing a
   new graphics driver.
 - The best route uses more upstream integration, not more blacklisting.
-- Full dGPU power-off and external-display support are mutually exclusive
-  operating states on this model; the configuration should expose both as
-  named boot/use modes.
+- Full dGPU power-off and **native** external-display support are mutually
+  exclusive operating states on this model; the configuration should expose
+  both as named boot/use modes. USB DisplayLink is a separate transport and
+  does not refute that native-link tradeoff (see 2026-08-01 note).
 - Graphics work does not solve the independent internal-SSD flush problem.
 - The first graphics experiment should run from independent Linux storage or
   after storage is acceptable, and must not be mixed with an AHCI experiment.
