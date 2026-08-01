@@ -24,7 +24,7 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux Intel-first graphics / GMUX | Active research; daily use gated on storage and power-management evidence | [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) and [`docs/graphics/`](docs/graphics/README.md) |
+| Linux Intel-first graphics / GMUX | Intel panel path verified; dGPU power / native externals still open | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs
@@ -64,14 +64,15 @@ kernel and packaging baseline. Debian, Fedora, and Arch can use the same
 reproduction and validation harness later; changing distributions alone is not
 assumed to change the underlying `ahci` driver path.
 
-Project status on 2026-07-29: the Windows GMUX route is archived and native
-Linux is the active route. The test Mac is on Big Sur `11.7.11`; APFS fills the
-internal SSD and no custom Linux kernel is installed internally. A reproducible
-stock legacy-INTx command-trace artifact is ready for the next measurement, but
-no USB has been reprovisioned and the Mac has no disposable scratch partition.
-The 128 GB lab medium's last verified payload is the Windows Intel-enumeration
-probe, not macOS recovery or a normal Linux installer, and it must not be booted
-casually.
+Project status on 2026-07-30: the Windows GMUX route is archived and native
+Linux is the active route. The test Mac retains Big Sur `11.7.11`; its Windows
+partitions were removed and APFS was expanded, and no custom Linux kernel is
+installed internally. Two clean builds of the tightened stock legacy-INTx
+command-trace appliance were byte-identical and passed host validation. The
+128 GB lab medium now contains that appliance on its FAT lab partition, with an
+APFS data partition preserved separately. It is not macOS recovery or a normal
+Linux installer and must not be booted casually. No disposable internal scratch
+partition exists, so no physical Linux test has run.
 See [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) for the
 storage and graphics gates. For continuation on another host, start with the
 [session handoff](docs/session-handoff.md).
@@ -113,6 +114,8 @@ as a fix until it demonstrates a different result.
   used by the staged physical tests.
 - `scripts/write-readonly-baseline-usb.sh` — provision an explicitly selected
   removable USB with destructive-operation guards and read-back verification.
+- `scripts/prepare-lab-backup-usb.sh` — erase an explicitly selected removable
+  USB into a small Linux lab/report volume plus a separate APFS backup target.
 - `scripts/run-latency-probe.sh` — bounded `fdatasync()` latency probe with
   optional block trace capture.
 - `scripts/summarize-block-trace.py` — summarize flush-like block request
@@ -158,13 +161,14 @@ performance fix. APFS was never mounted, writes were confined to the explicit
 disposable partition, and the internal disk was read-only again after the
 probe. Nothing has been installed as a Linux system on the internal disk.
 
-The current next step is storage-only and does not use the MSI patch: a
-byte-reproducible stock Linux `7.1.3` legacy-INTx appliance is ready to split
-filesystem flush latency into time before ATA command issue and time from ATA
-issue to completion. Its host-side safety tests pass, but no USB has been
-provisioned and the physical run remains pending because the restored APFS-only
-disk layout has no disposable scratch partition. NVIDIA work is deferred until
-storage is usable.
+The current next step is storage-only and does not use the MSI patch: rebuild a
+stock Linux `7.1.3` legacy-INTx appliance after binding its guard to a newly
+approved scratch partition. It will split filesystem flush latency into time
+before ATA command issue and time from ATA issue to completion. Component,
+analyzer, and synthetic filesystem tests pass, but the revised appliance has
+not had its required complete build and virtual QA. No USB has been provisioned
+and the current Big Sur plus Windows layout has no disposable scratch
+partition. NVIDIA work is deferred until storage is usable.
 
 See [the public findings](docs/findings.md) for the decision record and
 [the test protocol](docs/test-protocol.md) for the bounded, non-destructive
@@ -193,15 +197,22 @@ The queue-depth-1 MSI-plus-forced-non-NCQ branch was prepared but its second
 deterministic build was canceled, its first output no longer exists, and no
 physical run occurred. It is not the next experiment. Storage-only work
 resumed with a lower-risk, traced stock legacy run that distinguishes libata
-queue delay from actual `FLUSH CACHE EXT` execution. The artifact passed
-deterministic build and host-side guard QA; USB provisioning, scratch
-recreation, and the physical run remain separate user-present checkpoints.
+queue delay from actual `FLUSH CACHE EXT` execution. A historical artifact
+passed deterministic build and host-side guard QA. The tightened replacement
+must be rebuilt and revalidated; scratch creation, USB provisioning, and the
+physical run remain separate user-present checkpoints.
 
 ## Linux Graphics Notes
 
-Deferred. See [`docs/graphics/README.md`](docs/graphics/README.md) and the
-upstream graphics review in
-[`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md).
+Intel-first internal panel ownership was verified on this `MacBookPro11,3`
+(2026-08-01): macOS-written Intel `gpu-power-prefs` plus an EFI-stub/UKI boot
+so `apple_set_os()` runs, then `i915` owns eDP 2880×1800. Reproduction guide
+and helper scripts:
+
+- [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md)
+- [`docs/graphics/README.md`](docs/graphics/README.md)
+- Evidence:
+  [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](docs/source-notes/2026-08-01-intel-panel-and-display-path.md)
 
 Keep graphics evidence and AHCI/libata patch series separate even though both
 tracks share this repository.

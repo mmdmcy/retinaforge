@@ -6,6 +6,8 @@ AHCI/libata patch series even though both tracks share the tree.
 
 ## Start here
 
+- **Reproduce Intel-first panel (how-to + scripts):**
+  [`docs/graphics/intel-first-repro.md`](intel-first-repro.md)
 - **Latest physical validation (2026-08-01):**
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](../source-notes/2026-08-01-intel-panel-and-display-path.md)
 - Upstream graphics review:
@@ -18,6 +20,13 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/linux-native-roadmap.md`](../linux-native-roadmap.md)
 - Storage-first policy and sequencing:
   [`docs/storage-development-plan.md`](../storage-development-plan.md)
+
+## Helper scripts
+
+| Script | Role |
+| --- | --- |
+| [`macos/scripts/set-gpu-power-prefs-intel.sh`](../../macos/scripts/set-gpu-power-prefs-intel.sh) | macOS: set Intel `gpu-power-prefs` |
+| [`scripts/graphics/check-intel-first-panel.sh`](../../scripts/graphics/check-intel-first-panel.sh) | Linux: read-only verify Intel panel path |
 
 ## Scope
 
