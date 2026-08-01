@@ -8,7 +8,7 @@ import json
 import math
 import re
 import sys
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +19,7 @@ EVENT_PREFIX = re.compile(
 BLOCK_BODY = re.compile(
     r"(?P<major>\d+),(?P<minor>\d+)\s+(?P<rwbs>\S+)\s"
 )
+BLOCK_COMPLETION_ERROR = re.compile(r"\[(?P<error>-?\d+)\]\s*$")
 ATA_ISSUE_BODY = re.compile(
     r"ata_port=(?P<port>\d+)\s+ata_dev=(?P<dev>\d+)\s+"
     r"tag=(?P<tag>\d+)\s+proto=\S+\s+cmd=(?P<cmd>\S+)"
@@ -68,14 +69,19 @@ def parse_device(value: str) -> tuple[int, int]:
 def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
     block_flushes: deque[float] = deque()
     block_to_ata: deque[float] = deque()
-    ata_outstanding: dict[tuple[int, int, int], deque[AtaCommand]] = defaultdict(deque)
+    ata_outstanding: dict[tuple[int, int, int], AtaCommand] = {}
 
     block_latencies_ms: list[float] = []
     pre_issue_latencies_ms: list[float] = []
     ata_latencies_ms: list[float] = []
+    flush_ext_issued = 0
     failed_flushes = 0
+    failed_block_flushes = 0
+    failed_ata_commands = 0
     unmatched_block_completions = 0
     unmatched_ata_completions = 0
+    duplicate_ata_issues = 0
+    unparseable_block_completions = 0
     buffered_entries: int | None = None
     written_entries: int | None = None
 
@@ -99,14 +105,22 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
             if (
                 int(block_match["major"]),
                 int(block_match["minor"]),
-            ) != device or "F" not in block_match["rwbs"]:
+            ) != device or not block_match["rwbs"].startswith("F"):
                 continue
             if event == "block_rq_issue":
                 block_flushes.append(timestamp)
                 block_to_ata.append(timestamp)
             elif block_flushes:
+                issued_at = block_flushes.popleft()
+                completion_error = BLOCK_COMPLETION_ERROR.search(body)
+                if completion_error is None:
+                    unparseable_block_completions += 1
+                    continue
+                if int(completion_error["error"]):
+                    failed_block_flushes += 1
+                    continue
                 block_latencies_ms.append(
-                    (timestamp - block_flushes.popleft()) * 1_000
+                    (timestamp - issued_at) * 1_000
                 )
             else:
                 unmatched_block_completions += 1
@@ -122,11 +136,16 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
                 int(issue_match["tag"]),
             )
             command = issue_match["cmd"]
-            ata_outstanding[key].append(AtaCommand(timestamp, command))
+            if key in ata_outstanding:
+                duplicate_ata_issues += 1
+                continue
+            ata_outstanding[key] = AtaCommand(timestamp, command)
             if command in FLUSH_COMMANDS and block_to_ata:
                 pre_issue_latencies_ms.append(
                     (timestamp - block_to_ata.popleft()) * 1_000
                 )
+            if command == "ATA_CMD_FLUSH_EXT":
+                flush_ext_issued += 1
             continue
 
         if event in {"ata_qc_complete_done", "ata_qc_complete_failed"}:
@@ -138,20 +157,19 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
                 int(complete_match["dev"]),
                 int(complete_match["tag"]),
             )
-            if not ata_outstanding[key]:
+            if key not in ata_outstanding:
                 unmatched_ata_completions += 1
                 continue
-            command = ata_outstanding[key].popleft()
+            command = ata_outstanding.pop(key)
+            if event == "ata_qc_complete_failed":
+                failed_ata_commands += 1
+                if command.command in FLUSH_COMMANDS:
+                    failed_flushes += 1
+                continue
             if command.command in FLUSH_COMMANDS:
                 ata_latencies_ms.append((timestamp - command.issued_at) * 1_000)
-                if event == "ata_qc_complete_failed":
-                    failed_flushes += 1
 
-    unmatched_ata_issues = sum(
-        command.command in FLUSH_COMMANDS
-        for commands in ata_outstanding.values()
-        for command in commands
-    )
+    unmatched_ata_issues = len(ata_outstanding)
     result: dict[str, object] = {
         "device": f"{device[0]},{device[1]}",
         "trace_buffer": {
@@ -167,7 +185,10 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
             "block_flush_end_to_end": len(block_latencies_ms),
             "block_flush_to_ata_issue": len(pre_issue_latencies_ms),
             "ata_flush_issue_to_completion": len(ata_latencies_ms),
+            "ata_flush_ext_issued": flush_ext_issued,
+            "block_flush_failed": failed_block_flushes,
             "ata_flush_failed": failed_flushes,
+            "ata_commands_failed": failed_ata_commands,
         },
         "unmatched": {
             "block_issues": len(block_flushes),
@@ -175,6 +196,8 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
             "block_flushes_without_ata_issue": len(block_to_ata),
             "ata_issues": unmatched_ata_issues,
             "ata_completions": unmatched_ata_completions,
+            "duplicate_ata_issues": duplicate_ata_issues,
+            "unparseable_block_completions": unparseable_block_completions,
         },
         "latency_ms": {
             "block_flush_end_to_end": distribution(block_latencies_ms),
@@ -183,6 +206,44 @@ def summarize(path: Path, device: tuple[int, int]) -> dict[str, object]:
         },
     }
     return result
+
+
+def acceptance_errors(result: dict[str, object]) -> list[str]:
+    errors: list[str] = []
+    trace_buffer = result["trace_buffer"]
+    samples = result["samples"]
+    unmatched = result["unmatched"]
+
+    if (
+        trace_buffer["entries_in_buffer"] is None
+        or trace_buffer["entries_written"] is None
+    ):
+        errors.append("trace buffer accounting is unavailable")
+    elif trace_buffer["overflow_detected"]:
+        errors.append("trace buffer overflowed")
+
+    sample_names = (
+        "block_flush_end_to_end",
+        "block_flush_to_ata_issue",
+        "ata_flush_issue_to_completion",
+    )
+    for name in sample_names:
+        if samples[name] < 1:
+            errors.append(f"no {name} samples")
+    if len({samples[name] for name in sample_names}) != 1:
+        errors.append("block and ATA flush sample counts differ")
+    if samples["ata_flush_ext_issued"] < 1:
+        errors.append("no ATA_CMD_FLUSH_EXT command was issued")
+    if samples["ata_flush_failed"]:
+        errors.append("one or more ATA flushes failed")
+    if samples["block_flush_failed"]:
+        errors.append("one or more block flushes failed")
+    if samples["ata_commands_failed"]:
+        errors.append("one or more ATA commands failed")
+    for name, count in unmatched.items():
+        if count:
+            errors.append(f"unmatched {name}: {count}")
+    return errors
 
 
 def main() -> int:
@@ -195,15 +256,23 @@ def main() -> int:
         help="physical block device major,minor (default: 8,0)",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit nonzero unless every block and ATA flush is matched and successful",
+    )
     args = parser.parse_args()
 
     if not args.trace.is_file():
         parser.error(f"not a readable trace: {args.trace}")
 
     result = summarize(args.trace, args.device)
+    errors = acceptance_errors(result)
+    result["acceptable"] = not errors
+    result["acceptance_errors"] = errors
     if args.json:
         print(json.dumps(result, sort_keys=True))
-        return 0
+        return int(args.strict and bool(errors))
 
     print(f"device: {result['device']}")
     trace_buffer = result["trace_buffer"]
@@ -218,7 +287,10 @@ def main() -> int:
         f"block={samples['block_flush_end_to_end']} "
         f"pre_issue={samples['block_flush_to_ata_issue']} "
         f"ata={samples['ata_flush_issue_to_completion']} "
-        f"failed={samples['ata_flush_failed']}"
+        f"flush_ext_issued={samples['ata_flush_ext_issued']} "
+        f"block_failed={samples['block_flush_failed']} "
+        f"ata_flush_failed={samples['ata_flush_failed']} "
+        f"ata_commands_failed={samples['ata_commands_failed']}"
     )
     unmatched = result["unmatched"]
     print(
@@ -233,7 +305,10 @@ def main() -> int:
                 f"{name} ms: "
                 + " ".join(f"{key}={value}" for key, value in values.items())
             )
-    return 0
+    print(f"acceptable: {not errors}")
+    for error in errors:
+        print(f"acceptance error: {error}")
+    return int(args.strict and bool(errors))
 
 
 if __name__ == "__main__":

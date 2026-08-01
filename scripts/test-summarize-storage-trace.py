@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ worker-1 [000] d..1. 10.200000: ata_qc_issue: ata_port=1 ata_dev=0 tag=4 proto=A
         self.assertEqual(latency["block_flush_end_to_end"]["p50"], 910.0)
         self.assertFalse(result["trace_buffer"]["overflow_detected"])
         self.assertEqual(result["unmatched"]["ata_issues"], 0)
+        self.assertEqual(MODULE.acceptance_errors(result), [])
 
     def test_tracks_failed_flush_and_buffer_overflow(self) -> None:
         result = self.summarize(
@@ -53,6 +55,58 @@ worker-1 [000] d..1. 1.020000: ata_qc_complete_failed: ata_port=1 ata_dev=0 tag=
         )
         self.assertTrue(result["trace_buffer"]["overflow_detected"])
         self.assertEqual(result["samples"]["ata_flush_failed"], 1)
+        errors = MODULE.acceptance_errors(result)
+        self.assertIn("trace buffer overflowed", errors)
+        self.assertIn("one or more ATA flushes failed", errors)
+
+    def test_ignores_fua_write_block_events(self) -> None:
+        result = self.summarize(
+            """\
+# entries-in-buffer/entries-written: 8/8
+worker-1 [000] ..... 9.000000: block_rq_issue: 8,0 WF 0 () 8 + 8 none,0,0 [worker]
+worker-1 [000] ..... 9.010000: block_rq_complete: 8,0 WF () 8 + 8 none,0,0 [0]
+worker-1 [000] ..... 10.000000: block_rq_issue: 8,0 FF 0 () 0 + 0 none,0,0 [worker]
+worker-1 [000] d..1. 10.200000: ata_qc_issue: ata_port=1 ata_dev=0 tag=4 proto=ATA_PROT_NODATA cmd=ATA_CMD_FLUSH_EXT
+<idle>-0 [001] d.h2. 10.900000: ata_qc_complete_done: ata_port=1 ata_dev=0 tag=4 flags=9
+<idle>-0 [001] ..s1. 10.910000: block_rq_complete: 8,0 FF () 0 + 0 none,0,0 [0]
+"""
+        )
+        self.assertEqual(result["samples"]["block_flush_end_to_end"], 1)
+        self.assertEqual(MODULE.acceptance_errors(result), [])
+
+    def test_rejects_duplicate_ata_tag_and_strict_cli_fails(self) -> None:
+        text = """\
+# entries-in-buffer/entries-written: 5/5
+worker-1 [000] ..... 1.000000: block_rq_issue: 8,0 FF 0 () 0 + 0 none,0,0 [worker]
+worker-1 [000] d..1. 1.010000: ata_qc_issue: ata_port=1 ata_dev=0 tag=2 proto=ATA_PROT_NODATA cmd=ATA_CMD_FLUSH_EXT
+worker-1 [000] d..1. 1.020000: ata_qc_issue: ata_port=1 ata_dev=0 tag=2 proto=ATA_PROT_DMA cmd=ATA_CMD_READ_EXT
+worker-1 [000] d..1. 1.030000: ata_qc_complete_done: ata_port=1 ata_dev=0 tag=2 flags=9
+worker-1 [000] ..... 1.040000: block_rq_complete: 8,0 FF () 0 + 0 none,0,0 [0]
+"""
+        result = self.summarize(text)
+        self.assertEqual(result["unmatched"]["duplicate_ata_issues"], 1)
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.txt"
+            trace.write_text(text, encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), str(trace), "--strict"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+            )
+        self.assertNotEqual(completed.returncode, 0)
+
+    def test_rejects_failed_block_flush_and_missing_buffer_accounting(self) -> None:
+        result = self.summarize(
+            """\
+worker-1 [000] ..... 1.000000: block_rq_issue: 8,0 FF 0 () 0 + 0 none,0,0 [worker]
+worker-1 [000] d..1. 1.010000: ata_qc_issue: ata_port=1 ata_dev=0 tag=2 proto=ATA_PROT_NODATA cmd=ATA_CMD_FLUSH_EXT
+worker-1 [000] d..1. 1.020000: ata_qc_complete_done: ata_port=1 ata_dev=0 tag=2 flags=9
+worker-1 [000] ..... 1.030000: block_rq_complete: 8,0 FF () 0 + 0 none,0,0 [-5]
+"""
+        )
+        errors = MODULE.acceptance_errors(result)
+        self.assertIn("trace buffer accounting is unavailable", errors)
+        self.assertIn("one or more block flushes failed", errors)
 
 
 if __name__ == "__main__":

@@ -21,9 +21,20 @@ scratch_name=
 scratch_partition_number=
 scratch_gpt_name=absent
 scratch_discovery=label
+expected_scratch_partition=
+expected_partition_count=
+expected_scratch_start=
+expected_scratch_sectors=
+expected_target_sectors=
+expected_capture_disk_sectors=
+expected_capture_lab_partuuid=
+expected_capture_backup_partuuid=
 capture_dev=
 capture_disk=
 capture_part=
+capture_backup_part=
+capture_identity_verified=0
+capture_backup_protected=0
 capture_mounted=0
 diagnostic_profile=unknown
 diagnostic_rc=1
@@ -33,6 +44,11 @@ stack_mounted=0
 stack_mapping=mbptest_stack_crypt
 stack_mapping_active=0
 stack_mapper=
+ahci_sample_log=/run/ahci-samples.txt
+ahci_sample_enable=/run/ahci-sample.enable
+ahci_sampler_pid=
+ahci_sampler_rc=1
+ahci_sample_count=0
 
 mount -t devtmpfs devtmpfs /dev
 exec </dev/console >/dev/console 2>&1
@@ -54,15 +70,46 @@ sanitize() {
 		-e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g' \
 		-e 's/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/<redacted-uuid>/g' \
 		-e '/[Ss]erial [Nn]umber:/s/:.*/: <redacted>/' \
-		-e '/[Ss]erial[Nn]umber:/s/:.*/: <redacted>/'
+		-e '/[Ss]erial[Nn]umber:/s/:.*/: <redacted>/' \
+		-e '/[Ww][Ww][Nn].*:/s/:.*/: <redacted>/' \
+		-e '/[Uu]nique [Ii][Dd].*:/s/:.*/: <redacted>/'
+}
+
+read_cmdline_value() {
+	requested_key=$1
+	found_value=
+	found_count=0
+	for argument in $(cat /proc/cmdline); do
+		case "$argument" in
+			"$requested_key"=*)
+				found_value=${argument#*=}
+				found_count=$((found_count + 1))
+				;;
+		esac
+	done
+	[ "$found_count" -eq 1 ] || return 1
+	printf '%s\n' "$found_value"
 }
 
 mount_capture_for_diagnostics() {
 	[ "$capture_mounted" -eq 0 ] || return 0
+	[ "$capture_identity_verified" -eq 1 ] || return 1
 	[ -n "$capture_dev" ] || return 1
 	[ -b "$capture_dev" ] || return 1
 	mount -t vfat -o rw,noatime,utf8=1 "$capture_dev" /mnt/capture || return 1
 	capture_mounted=1
+	return 0
+}
+
+protect_and_hide_capture_backup() {
+	[ -n "$capture_disk" ] || return 1
+	[ -n "$capture_backup_part" ] || return 1
+	blockdev --setro "/dev/$capture_backup_part" 2>/dev/null || return 1
+	[ "$(blockdev --getro "/dev/$capture_backup_part" 2>/dev/null)" = 1 ] || return 1
+	rm -f "/dev/$capture_disk" "/dev/$capture_backup_part" || return 1
+	[ ! -e "/dev/$capture_disk" ] || return 1
+	[ ! -e "/dev/$capture_backup_part" ] || return 1
+	capture_backup_protected=1
 	return 0
 }
 
@@ -113,31 +160,62 @@ write_failure_capture() {
 
 reprotect_target() {
 	[ -n "$target_name" ] || return 0
+	reprotect_rc=0
+	# The whole-disk node is hidden during the write phase. Recreate it before
+	# restoring the kernel read-only flags.
+	mdev -s 2>/dev/null || reprotect_rc=1
 	for sysdev in /sys/class/block/"$target_name"*; do
-		[ -e "$sysdev" ] || continue
+		[ -f "$sysdev/partition" ] || continue
 		name=$(basename "$sysdev")
-		[ -b "/dev/$name" ] || continue
-		blockdev --setro "/dev/$name" 2>/dev/null || true
+		if [ ! -b "/dev/$name" ]; then
+			reprotect_rc=1
+			continue
+		fi
+		blockdev --setro "/dev/$name" 2>/dev/null || reprotect_rc=1
+		[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || reprotect_rc=1
 	done
-	[ -b "/dev/$target_name" ] && blockdev --setro "/dev/$target_name" 2>/dev/null || true
+	if [ -b "/dev/$target_name" ]; then
+		blockdev --setro "/dev/$target_name" 2>/dev/null || reprotect_rc=1
+		[ "$(blockdev --getro "/dev/$target_name" 2>/dev/null)" = 1 ] || reprotect_rc=1
+	else
+		reprotect_rc=1
+	fi
+	protect_and_hide_capture_backup || reprotect_rc=1
+	return "$reprotect_rc"
 }
 
 cleanup_stack() {
+	cleanup_rc=0
 	if [ "$stack_mounted" -eq 1 ]; then
-		timeout -s KILL 20 umount "$stack_mount" 2>/dev/null || true
-		stack_mounted=0
+		if timeout -s KILL 20 umount "$stack_mount" 2>/dev/null; then
+			stack_mounted=0
+		else
+			cleanup_rc=1
+		fi
 	fi
 	if [ "$stack_mapping_active" -eq 1 ]; then
-		timeout -s KILL 20 dmsetup remove --noudevsync "$stack_mapping" \
-			2>/dev/null || true
-		stack_mapping_active=0
-		stack_mapper=
+		if timeout -s KILL 20 dmsetup remove --noudevsync "$stack_mapping" \
+			2>/dev/null; then
+			stack_mapping_active=0
+			stack_mapper=
+		else
+			cleanup_rc=1
+		fi
 	fi
+	return "$cleanup_rc"
 }
 
 cleanup_and_reprotect() {
-	cleanup_stack
-	reprotect_target
+	cleanup_and_reprotect_rc=0
+	cleanup_stack || cleanup_and_reprotect_rc=1
+	reprotect_target || cleanup_and_reprotect_rc=1
+	return "$cleanup_and_reprotect_rc"
+}
+
+immediate_poweroff() {
+	echo "CRITICAL: cleanup or SSD reprotection could not be proved. Powering off immediately."
+	poweroff -f
+	while :; do sleep 60; done
 }
 
 poweroff_after_failure() {
@@ -146,7 +224,7 @@ poweroff_after_failure() {
 	echo "ERROR: $message"
 	echo "Failure stage: $failure_stage"
 	echo "No APFS filesystem was mounted. Cleaning scratch state and re-protecting the SSD."
-	cleanup_and_reprotect
+	cleanup_and_reprotect || immediate_poweroff
 	if mount_capture_for_diagnostics; then
 		write_failure_capture "$message" || true
 		sync
@@ -203,6 +281,24 @@ done
 [ -b "$capture_dev" ] || poweroff_after_failure "$capture_dev is not a block device"
 
 failure_stage=capture-identity
+expected_capture_disk_sectors=$(read_cmdline_value mbp_ahci.capture_disk_sectors) || \
+	poweroff_after_failure "build has no unique capture disk sector count"
+expected_capture_lab_partuuid=$(read_cmdline_value mbp_ahci.capture_lab_partuuid) || \
+	poweroff_after_failure "build has no unique capture lab partition UUID"
+expected_capture_backup_partuuid=$(read_cmdline_value mbp_ahci.capture_backup_partuuid) || \
+	poweroff_after_failure "build has no unique capture backup partition UUID"
+case "$expected_capture_disk_sectors" in
+	''|*[!0-9]*) poweroff_after_failure "capture disk sector count is not numeric" ;;
+esac
+for expected_capture_uuid in \
+	"$expected_capture_lab_partuuid" \
+	"$expected_capture_backup_partuuid"; do
+	printf '%s\n' "$expected_capture_uuid" | \
+		grep -Eq '^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$' || \
+		poweroff_after_failure "build-time capture partition UUID is invalid"
+done
+expected_capture_lab_partuuid=$(printf '%s\n' "$expected_capture_lab_partuuid" | tr 'A-F' 'a-f')
+expected_capture_backup_partuuid=$(printf '%s\n' "$expected_capture_backup_partuuid" | tr 'A-F' 'a-f')
 capture_part=$(basename "$capture_dev")
 case "$capture_part" in
 	sd[a-z][0-9]*) capture_disk=${capture_part%%[0-9]*} ;;
@@ -210,8 +306,98 @@ case "$capture_part" in
 	*) poweroff_after_failure "unsupported capture partition name: $capture_part" ;;
 esac
 
+# Prove that the labelled capture filesystem is partition 1 of a removable
+# USB disk before mounting it writable.
+[ -f "/sys/class/block/$capture_part/partition" ] || \
+	poweroff_after_failure "$capture_dev is not a partition"
+capture_real=$(readlink -f "/sys/class/block/$capture_part")
+capture_parent=$(basename "$(dirname "$capture_real")")
+[ "$capture_parent" = "$capture_disk" ] || \
+	poweroff_after_failure "$capture_dev is not a child of /dev/$capture_disk"
+[ "$(cat "/sys/class/block/$capture_disk/removable" 2>/dev/null)" = 1 ] || \
+	poweroff_after_failure "/dev/$capture_disk is not marked removable"
+capture_disk_sectors=$(cat "/sys/class/block/$capture_disk/size" 2>/dev/null || true)
+[ "$capture_disk_sectors" = "$expected_capture_disk_sectors" ] || \
+	poweroff_after_failure "capture disk size does not match this build"
+capture_disk_real=$(readlink -f "/sys/class/block/$capture_disk")
+case "$capture_disk_real" in
+	*/usb*/*) ;;
+	*) poweroff_after_failure "/dev/$capture_disk is not on a USB device path" ;;
+esac
+[ "$(cat "/sys/class/block/$capture_part/partition" 2>/dev/null)" = 1 ] || \
+	poweroff_after_failure "$capture_dev is not capture partition 1"
+grep -Fxq 'PARTNAME=MBP_AHCI' "/sys/class/block/$capture_part/uevent" 2>/dev/null || \
+	poweroff_after_failure "$capture_dev GPT partition name is not MBP_AHCI"
+capture_lab_start=$(cat "/sys/class/block/$capture_part/start" 2>/dev/null || true)
+capture_lab_sectors=$(cat "/sys/class/block/$capture_part/size" 2>/dev/null || true)
+[ "$capture_lab_start" = 2048 ] && [ "$capture_lab_sectors" = 2097152 ] || \
+	poweroff_after_failure "capture lab partition geometry is not the approved 1 GiB layout"
+capture_lab_partuuid=$(awk -F= '$1 == "PARTUUID" { print tolower($2) }' \
+	"/sys/class/block/$capture_part/uevent" 2>/dev/null)
+[ "$capture_lab_partuuid" = "$expected_capture_lab_partuuid" ] || \
+	poweroff_after_failure "capture lab partition UUID does not match this build"
+capture_partition_count=0
+for child in /sys/class/block/"$capture_disk"*; do
+	[ -f "$child/partition" ] || continue
+	capture_partition_count=$((capture_partition_count + 1))
+done
+[ "$capture_partition_count" -eq 2 ] || \
+	poweroff_after_failure "/dev/$capture_disk does not have exactly two partitions"
+case "$capture_disk" in
+	sd[a-z]) capture_backup_part="${capture_disk}2" ;;
+	nvme[0-9]n[0-9]) capture_backup_part="${capture_disk}p2" ;;
+	*) poweroff_after_failure "unsupported capture disk name: $capture_disk" ;;
+esac
+[ -b "/dev/$capture_backup_part" ] || \
+	poweroff_after_failure "capture backup partition /dev/$capture_backup_part is absent"
+grep -Fxq 'PARTNAME=MBP_BACKUP' "/sys/class/block/$capture_backup_part/uevent" 2>/dev/null || \
+	poweroff_after_failure "capture backup GPT partition name is not MBP_BACKUP"
+capture_backup_size=$(blockdev --getsize64 "/dev/$capture_backup_part" 2>/dev/null || true)
+case "$capture_backup_size" in
+	''|*[!0-9]*) poweroff_after_failure "capture backup size is not numeric" ;;
+esac
+[ "$capture_backup_size" -ge 64424509440 ] || \
+	poweroff_after_failure "capture backup partition is smaller than 60 GiB"
+capture_backup_start=$(cat "/sys/class/block/$capture_backup_part/start" 2>/dev/null || true)
+capture_backup_sectors=$(cat "/sys/class/block/$capture_backup_part/size" 2>/dev/null || true)
+for capture_value in "$capture_backup_start" "$capture_backup_sectors"; do
+	case "$capture_value" in
+		''|*[!0-9]*) poweroff_after_failure "capture backup geometry is not numeric" ;;
+	esac
+done
+	[ "$capture_backup_start" = 2099200 ] || \
+		poweroff_after_failure "capture backup start sector is unexpected"
+	# Classic GPT fill ends at disk_sectors-33. Apple APFS containers are
+	# 4 KiB-aligned and intentionally leave seven sectors before that, so a
+	# valid lab/backup stick ends at disk_sectors-40.
+	capture_backup_end=$((capture_backup_start + capture_backup_sectors))
+	case "$capture_backup_end" in
+		"$((capture_disk_sectors - 33))"|"$((capture_disk_sectors - 40))") ;;
+		*) poweroff_after_failure "capture backup does not reach the final usable GPT sector" ;;
+	esac
+capture_backup_partuuid=$(awk -F= '$1 == "PARTUUID" { print tolower($2) }' \
+	"/sys/class/block/$capture_backup_part/uevent" 2>/dev/null)
+	[ "$capture_backup_partuuid" = "$expected_capture_backup_partuuid" ] || \
+		poweroff_after_failure "capture backup partition UUID does not match this build"
+	# Partition 2 is already bound by GPT name, PARTUUID, start, and end
+	# geometry. Do not probe APFS container bytes here: some USB hosts return
+	# unstable reads of Apple containers even when the GPT identity is exact.
+	blockdev --setro "/dev/$capture_backup_part" 2>/dev/null || \
+		poweroff_after_failure "could not protect the capture backup partition"
+[ "$(blockdev --getro "/dev/$capture_backup_part" 2>/dev/null)" = 1 ] || \
+	poweroff_after_failure "capture backup partition did not become read-only"
+capture_identity_verified=1
+
 failure_stage=capture-mount
 mount_capture_for_diagnostics || poweroff_after_failure "could not mount capture USB"
+
+failure_stage=capture-artifact-integrity
+[ -f /mnt/capture/lab/BUILD-SHA256SUMS ] || \
+	poweroff_after_failure "capture USB build manifest is absent"
+(
+	cd /mnt/capture || exit 1
+	sha256sum -c lab/BUILD-SHA256SUMS
+) >/dev/null 2>&1 || poweroff_after_failure "capture USB artifact checksum failed"
 
 failure_stage=block-topology
 wait_for_block_topology || poweroff_after_failure "block-device topology did not settle"
@@ -240,6 +426,8 @@ for sysdev in /sys/class/block/*; do
 	esac
 done
 [ "$protected" -gt 0 ] || poweroff_after_failure "no non-capture disk was protected"
+protect_and_hide_capture_backup || \
+	poweroff_after_failure "could not isolate the capture backup partition"
 
 # Identify the exact Apple SSD through its 16-character SCSI model exposure.
 failure_stage=target-identity
@@ -266,17 +454,18 @@ failure_stage=dmi-identity
 failure_stage=kernel-profile
 kernel_release=$(uname -r)
 case "$kernel_release" in
-	*-mbp-ahci-legacy-ncq-write) diagnostic_profile=legacy-ncq-write ;;
-	*-mbp-ahci-msi-ncq-write) diagnostic_profile=msi-ncq-write ;;
-	*-mbp-ahci-legacy-stack) diagnostic_profile=legacy-stack ;;
-	*-mbp-ahci-msi-stack) diagnostic_profile=msi-stack ;;
-	*-mbp-ahci-msi-noncq-stack) diagnostic_profile=msi-noncq-stack ;;
+	7.1.3-mbp-ahci-legacy-ncq-write) diagnostic_profile=legacy-ncq-write ;;
+	7.1.3-mbp-ahci-legacy-stack) diagnostic_profile=legacy-stack ;;
+	7.1.3-mbp-ahci-flush-reg-stack) diagnostic_profile=flush-reg-stack ;;
+	7.1.3-mbp-ahci-plain-heavy-stack) diagnostic_profile=plain-heavy-stack ;;
+	7.1.3-mbp-ahci-msi-stack) diagnostic_profile=msi-stack ;;
+	7.1.3-mbp-ahci-msi-noncq-stack) diagnostic_profile=msi-noncq-stack ;;
 	*) poweroff_after_failure "unrecognized write-test kernel release: $kernel_release" ;;
 esac
 grep -q 'mbp_ahci.write_test=1' /proc/cmdline || \
 	poweroff_after_failure "explicit write-test command-line opt-in is absent"
 case "$diagnostic_profile" in
-	legacy-stack|msi-stack|msi-noncq-stack)
+	legacy-stack|flush-reg-stack|plain-heavy-stack|msi-stack|msi-noncq-stack)
 		grep -q 'mbp_ahci.stack_test=1' /proc/cmdline || \
 			poweroff_after_failure "filesystem-stack opt-in is absent"
 		;;
@@ -285,25 +474,61 @@ case "$diagnostic_profile" in
 			poweroff_after_failure "raw profile unexpectedly contains filesystem-stack opt-in"
 		;;
 esac
+case "$diagnostic_profile" in
+	flush-reg-stack|plain-heavy-stack)
+		grep -q 'libahci.mbp11_3_flush_reg_sample=1' /proc/cmdline || \
+			poweroff_after_failure "flush-reg sampling opt-in is absent"
+		;;
+esac
 
-# Require the filesystem label and exact partition number. If macOS supplied
-# an optional GPT name, it must match too. Then prove that this is the final
-# small child of the identified Apple SSD.
+# These values are embedded in the non-overridable kernel command line after
+# the current partition map is recorded. A stale appliance therefore refuses
+# a newly created scratch partition even when its label happens to match.
+failure_stage=scratch-build-identity
+expected_scratch_partition=$(read_cmdline_value mbp_ahci.scratch_partition) || \
+	poweroff_after_failure "build has no unique scratch partition number"
+expected_partition_count=$(read_cmdline_value mbp_ahci.partition_count) || \
+	poweroff_after_failure "build has no unique partition count"
+expected_scratch_start=$(read_cmdline_value mbp_ahci.scratch_start) || \
+	poweroff_after_failure "build has no unique scratch start sector"
+expected_scratch_sectors=$(read_cmdline_value mbp_ahci.scratch_sectors) || \
+	poweroff_after_failure "build has no unique scratch sector count"
+expected_target_sectors=$(read_cmdline_value mbp_ahci.target_sectors) || \
+	poweroff_after_failure "build has no unique target sector count"
+for value in \
+	"$expected_scratch_partition" \
+	"$expected_partition_count" \
+	"$expected_scratch_start" \
+	"$expected_scratch_sectors" \
+	"$expected_target_sectors"; do
+	case "$value" in
+		''|*[!0-9]*) poweroff_after_failure "build-time scratch geometry is not numeric" ;;
+	esac
+done
+[ "$expected_scratch_partition" -gt 0 ] && \
+	[ "$expected_partition_count" -ge "$expected_scratch_partition" ] && \
+	[ "$expected_scratch_sectors" -gt 0 ] && \
+	[ "$expected_target_sectors" -gt 0 ] || \
+	poweroff_after_failure "build-time scratch geometry is invalid"
+
+	# Require the filesystem label and build-bound partition number. macOS may
+	# omit the GPT partition name; if one is present it must be MBPTEST. Then
+	# prove that this is the exact final small child recorded for this artifact.
 failure_stage=scratch-identity
 scratch_dev=$(findfs "LABEL=$scratch_label" 2>/dev/null || true)
 if [ -z "$scratch_dev" ]; then
 	case "$diagnostic_profile" in
-		msi-stack|msi-noncq-stack)
+		legacy-stack|flush-reg-stack|plain-heavy-stack|msi-stack|msi-noncq-stack)
 			# Earlier guarded stack probes can leave either unrecognized
 			# dm-crypt ciphertext or a partial filesystem with one of the
-			# appliance's labels. Re-entry is constrained below by exact
-			# hardware, partition-count, and recorded-geometry checks.
-			scratch_dev="/dev/${target_name}3"
+			# appliance's labels. Every entry is constrained below by exact
+			# hardware and build-bound partition geometry.
+			scratch_dev="/dev/${target_name}${expected_scratch_partition}"
 			scratch_discovery=exact-geometry-reentry
 			reentry_type=$(blkid -s TYPE -o value "$scratch_dev" 2>/dev/null || true)
 			reentry_label=$(blkid -s LABEL -o value "$scratch_dev" 2>/dev/null || true)
 			case "$reentry_type:$reentry_label" in
-				:|ext4:MBPTEST_PLAIN|ext4:MBPTEST_CRYPT) ;;
+				:|exfat:MBPTEST|ext4:MBPTEST_PLAIN|ext4:MBPTEST_CRYPT|ext4:MBPTEST_SUST|ext4:MBPTEST_HEAVY) ;;
 				*) poweroff_after_failure "re-entry scratch has a signature not created by this appliance" ;;
 			esac
 			;;
@@ -316,27 +541,38 @@ fi
 scratch_name=$(basename "$scratch_dev")
 [ -f "/sys/class/block/$scratch_name/partition" ] || \
 	poweroff_after_failure "$scratch_dev is not a partition"
-scratch_partition_number=$(cat "/sys/class/block/$scratch_name/partition" 2>/dev/null || true)
-[ "$scratch_partition_number" = 3 ] || \
-	poweroff_after_failure "$scratch_dev is not partition number 3"
-if grep -q '^PARTNAME=' "/sys/class/block/$scratch_name/uevent" 2>/dev/null; then
-	grep -Fxq "PARTNAME=$scratch_label" "/sys/class/block/$scratch_name/uevent" 2>/dev/null || \
-		poweroff_after_failure "$scratch_dev GPT partition name is not $scratch_label"
-	scratch_gpt_name=$scratch_label
-fi
+	scratch_partition_number=$(cat "/sys/class/block/$scratch_name/partition" 2>/dev/null || true)
+	[ "$scratch_partition_number" = "$expected_scratch_partition" ] || \
+		poweroff_after_failure "$scratch_dev does not have the build-bound partition number"
+	# macOS diskutil sets the ExFAT volume label to MBPTEST and often leaves the
+	# GPT partition name unset or unrelated. When findfs already matched LABEL,
+	# trust that. On geometry re-entry, allow a missing name or exact MBPTEST.
+	scratch_partname=$(awk -F= '$1 == "PARTNAME" { print $2 }' \
+		"/sys/class/block/$scratch_name/uevent" 2>/dev/null || true)
+	case "$scratch_discovery:$scratch_partname" in
+		label:*)
+			scratch_gpt_name=${scratch_partname:-label-only}
+			;;
+		exact-geometry-reentry:|exact-geometry-reentry:"$scratch_label")
+			scratch_gpt_name=${scratch_partname:-absent}
+			;;
+		*)
+			poweroff_after_failure "$scratch_dev GPT partition name is not $scratch_label"
+			;;
+	esac
 
-scratch_real=$(readlink -f "/sys/class/block/$scratch_name")
-scratch_parent=$(basename "$(dirname "$scratch_real")")
-[ "$scratch_parent" = "$target_name" ] || \
-	poweroff_after_failure "$scratch_dev is not a child of $target_disk"
+	scratch_real=$(readlink -f "/sys/class/block/$scratch_name")
+	scratch_parent=$(basename "$(dirname "$scratch_real")")
+	[ "$scratch_parent" = "$target_name" ] || \
+		poweroff_after_failure "$scratch_dev is not a child of $target_disk"
 
 partition_count=0
 for child in /sys/class/block/"$target_name"*; do
 	[ -f "$child/partition" ] || continue
 	partition_count=$((partition_count + 1))
 done
-[ "$partition_count" -eq 3 ] || \
-	poweroff_after_failure "expected exactly three partitions on $target_disk"
+[ "$partition_count" -eq "$expected_partition_count" ] || \
+	poweroff_after_failure "$target_disk partition count does not match this build"
 
 failure_stage=scratch-geometry
 scratch_size=$(blockdev --getsize64 "$scratch_dev" 2>/dev/null || true)
@@ -350,12 +586,12 @@ for value in "$scratch_size" "$scratch_start" "$scratch_sectors" "$target_sector
 done
 [ "$scratch_size" -ge 4294967296 ] && [ "$scratch_size" -le 17179869184 ] || \
 	poweroff_after_failure "scratch size is outside the 4-16 GiB safety window"
-if [ "$scratch_discovery" = exact-geometry-reentry ]; then
-	[ "$scratch_start" = 1937909760 ] || \
-		poweroff_after_failure "re-entry scratch start does not match the recorded disposable partition"
-	[ "$scratch_sectors" = 16300032 ] || \
-		poweroff_after_failure "re-entry scratch size does not match the recorded disposable partition"
-fi
+[ "$scratch_start" = "$expected_scratch_start" ] || \
+	poweroff_after_failure "scratch start does not match this build"
+[ "$scratch_sectors" = "$expected_scratch_sectors" ] || \
+	poweroff_after_failure "scratch size does not match this build"
+[ "$target_sectors" = "$expected_target_sectors" ] || \
+	poweroff_after_failure "target size does not match this build"
 [ $((scratch_start * 10)) -ge $((target_sectors * 9)) ] || \
 	poweroff_after_failure "scratch partition is not in the final 10 percent of the SSD"
 scratch_end=$((scratch_start + scratch_sectors))
@@ -393,8 +629,8 @@ case "$diagnostic_profile" in
 			poweroff_after_failure "forced non-NCQ profile is missing its command-line override"
 		;;
 	*)
-		[ -n "$queue_depth" ] && [ "$queue_depth" -gt 1 ] || \
-			poweroff_after_failure "NCQ queue depth is not greater than one"
+		[ "$queue_depth" = 32 ] || \
+			poweroff_after_failure "NCQ queue depth is not the expected stock depth 32"
 		grep -q 'libata.force=noncq' /proc/cmdline && \
 			poweroff_after_failure "NCQ profile unexpectedly contains the non-NCQ override"
 		;;
@@ -404,12 +640,12 @@ if [ -d "/sys/bus/pci/devices/$controller/msi_irqs" ]; then
 	msi_count=$(ls -1 "/sys/bus/pci/devices/$controller/msi_irqs" 2>/dev/null | wc -l)
 fi
 case "$diagnostic_profile" in
-	legacy-ncq-write|legacy-stack)
+	legacy-ncq-write|legacy-stack|flush-reg-stack|plain-heavy-stack)
 		[ "$msi_count" -eq 0 ] || poweroff_after_failure "legacy profile unexpectedly allocated MSI"
 		grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline && \
 			poweroff_after_failure "legacy profile contains the MSI opt-in"
 		;;
-	msi-ncq-write|msi-stack|msi-noncq-stack)
+	msi-noncq-stack)
 		[ "$msi_count" -eq 1 ] || poweroff_after_failure "MSI profile did not allocate exactly one vector"
 		grep -q 'ahci.mbp11_3_msi_diagnostic=1' /proc/cmdline || \
 			poweroff_after_failure "MSI profile is missing the explicit opt-in"
@@ -463,7 +699,54 @@ echo 1 > "$trace_root/tracing_on" || \
 	poweroff_after_failure "could not start tracing"
 trace_enabled=1
 
+start_ahci_sampler() {
+	ahci_sampler_pid=
+	ahci_sampler_rc=1
+	ahci_sample_count=0
+	rm -f "$ahci_sample_log" "$ahci_sample_enable"
+	: > "$ahci_sample_log" || return 1
+	: > "$ahci_sample_enable" || return 1
+	ahci-port-sampler "$ahci_sample_log" "$ahci_sample_enable" 1000 &
+	ahci_sampler_pid=$!
+	sleep 1
+	kill -0 "$ahci_sampler_pid" 2>/dev/null || return 1
+	return 0
+}
+
+stop_ahci_sampler() {
+	if [ -n "$ahci_sampler_pid" ]; then
+		rm -f "$ahci_sample_enable"
+		i=0
+		while [ "$i" -lt 30 ]; do
+			kill -0 "$ahci_sampler_pid" 2>/dev/null || break
+			sleep 1
+			i=$((i + 1))
+		done
+		if kill -0 "$ahci_sampler_pid" 2>/dev/null; then
+			kill -TERM "$ahci_sampler_pid" 2>/dev/null || true
+			sleep 1
+		fi
+		if kill -0 "$ahci_sampler_pid" 2>/dev/null; then
+			kill -KILL "$ahci_sampler_pid" 2>/dev/null || true
+		fi
+		wait "$ahci_sampler_pid" 2>/dev/null
+		ahci_sampler_rc=$?
+		ahci_sampler_pid=
+	else
+		ahci_sampler_rc=1
+	fi
+	rm -f "$ahci_sample_enable"
+	if [ -f "$ahci_sample_log" ]; then
+		ahci_sample_count=$(grep -E '^[0-9]+ ' "$ahci_sample_log" 2>/dev/null | wc -l)
+	else
+		ahci_sample_count=0
+	fi
+}
+
 enable_scratch_write() {
+	# Linux partitions inherit the whole-disk read-only flag, so the parent
+	# bdev must be writable for any child write. Keep every sibling read-only,
+	# then remove the parent device node so workload helpers cannot address it.
 	blockdev --setrw "$target_disk" || return 1
 	for child in /sys/class/block/"$target_name"*; do
 		[ -f "$child/partition" ] || continue
@@ -482,10 +765,13 @@ enable_scratch_write() {
 		[ "$name" = "$scratch_name" ] && continue
 		[ "$(blockdev --getro "/dev/$name")" = 1 ] || return 1
 	done
+	rm -f "$target_disk" || return 1
+	[ ! -e "$target_disk" ] || return 1
 	return 0
 }
 
 scratch_siblings_are_read_only() {
+	[ ! -e "$target_disk" ] || return 1
 	for child in /sys/class/block/"$target_name"*; do
 		[ -f "$child/partition" ] || continue
 		name=$(basename "$child")
@@ -543,6 +829,98 @@ run_ext4_profile() {
 	return 1
 }
 
+# Darwin mirror: 64 x (1 MiB write + fdatasync) on a fresh plain ext4 scratch FS.
+run_sustained_darwin_mirror() {
+	printf '\n### sustained-darwin-mirror setup\n' >> "$probe_log"
+	if ! timeout -s KILL 60 mkfs.ext4 -F -q -L MBPTEST_SUST \
+		"$scratch_dev" >> "$probe_log" 2>&1; then
+		printf 'sustained-darwin-mirror_result=fail-mkfs\n' >> "$probe_log"
+		return 1
+	fi
+	if ! scratch_siblings_are_read_only; then
+		printf 'sustained-darwin-mirror_result=fail-sibling-protection\n' >> "$probe_log"
+		return 1
+	fi
+	if ! timeout -s KILL 30 mount -t ext4 -o rw,noatime,data=ordered \
+		"$scratch_dev" "$stack_mount" >> "$probe_log" 2>&1; then
+		printf 'sustained-darwin-mirror_result=fail-mount\n' >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=1
+	printf 'sustained-darwin-mirror_mount=' >> "$probe_log"
+	awk -v path="$stack_mount" '$2 == path { print; found=1 } END { exit !found }' \
+		/proc/mounts >> "$probe_log" 2>&1 || true
+
+	echo "mbp-ahci: begin sustained darwin-mirror probe" > /dev/kmsg
+	timeout -s KILL 280 sustained-sync-probe "$stack_mount" \
+		sustained-darwin-mirror >> "$probe_log" 2>&1
+	sustained_probe_rc=$?
+	echo "mbp-ahci: end sustained darwin-mirror probe rc=$sustained_probe_rc" > /dev/kmsg
+
+	if ! timeout -s KILL 40 umount "$stack_mount" >> "$probe_log" 2>&1; then
+		printf 'sustained-darwin-mirror_result=fail-unmount\n' >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=0
+
+	printf '\n### sustained-darwin-mirror read-only fsck\n' >> "$probe_log"
+	timeout -s KILL 90 e2fsck -fn "$scratch_dev" >> "$probe_log" 2>&1
+	sustained_fsck_rc=$?
+	if [ "$sustained_probe_rc" -eq 0 ] && [ "$sustained_fsck_rc" -eq 0 ]; then
+		printf 'sustained-darwin-mirror_result=pass\n' >> "$probe_log"
+		return 0
+	fi
+	printf 'sustained-darwin-mirror_result=fail probe_rc=%s fsck_rc=%s\n' \
+		"$sustained_probe_rc" "$sustained_fsck_rc" >> "$probe_log"
+	return 1
+}
+
+# Installer-shaped plain ext4: many small durable files + periodic dir sync.
+run_installer_plain_heavy() {
+	printf '\n### installer-plain-heavy setup\n' >> "$probe_log"
+	if ! timeout -s KILL 60 mkfs.ext4 -F -q -L MBPTEST_HEAVY \
+		"$scratch_dev" >> "$probe_log" 2>&1; then
+		printf 'installer-plain-heavy_result=fail-mkfs\n' >> "$probe_log"
+		return 1
+	fi
+	if ! scratch_siblings_are_read_only; then
+		printf 'installer-plain-heavy_result=fail-sibling-protection\n' >> "$probe_log"
+		return 1
+	fi
+	if ! timeout -s KILL 30 mount -t ext4 -o rw,noatime,data=ordered \
+		"$scratch_dev" "$stack_mount" >> "$probe_log" 2>&1; then
+		printf 'installer-plain-heavy_result=fail-mount\n' >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=1
+	printf 'installer-plain-heavy_mount=' >> "$probe_log"
+	awk -v path="$stack_mount" '$2 == path { print; found=1 } END { exit !found }' \
+		/proc/mounts >> "$probe_log" 2>&1 || true
+
+	echo "mbp-ahci: begin installer-plain-heavy probe" > /dev/kmsg
+	timeout -s KILL 900 installer-sync-probe "$stack_mount" \
+		installer-plain-heavy >> "$probe_log" 2>&1
+	installer_probe_rc=$?
+	echo "mbp-ahci: end installer-plain-heavy probe rc=$installer_probe_rc" > /dev/kmsg
+
+	if ! timeout -s KILL 40 umount "$stack_mount" >> "$probe_log" 2>&1; then
+		printf 'installer-plain-heavy_result=fail-unmount\n' >> "$probe_log"
+		return 1
+	fi
+	stack_mounted=0
+
+	printf '\n### installer-plain-heavy read-only fsck\n' >> "$probe_log"
+	timeout -s KILL 90 e2fsck -fn "$scratch_dev" >> "$probe_log" 2>&1
+	installer_fsck_rc=$?
+	if [ "$installer_probe_rc" -eq 0 ] && [ "$installer_fsck_rc" -eq 0 ]; then
+		printf 'installer-plain-heavy_result=pass\n' >> "$probe_log"
+		return 0
+	fi
+	printf 'installer-plain-heavy_result=fail probe_rc=%s fsck_rc=%s\n' \
+		"$installer_probe_rc" "$installer_fsck_rc" >> "$probe_log"
+	return 1
+}
+
 run_filesystem_stack_probe() {
 	: > "$probe_log"
 	printf 'stack_probe_version=1\n' >> "$probe_log"
@@ -550,12 +928,41 @@ run_filesystem_stack_probe() {
 	printf 'stack_target_size_bytes=%s\n' "$scratch_size" >> "$probe_log"
 	printf 'stack_target_sectors=%s\n' "$scratch_sectors" >> "$probe_log"
 
+	case "$diagnostic_profile" in
+		flush-reg-stack|plain-heavy-stack)
+			run_sustained_darwin_mirror || return 1
+			cleanup_stack || {
+				printf 'stack_result=fail-cleanup\n' >> "$probe_log"
+				return 1
+			}
+			scratch_siblings_are_read_only || {
+				printf 'stack_result=fail-sibling-protection\n' >> "$probe_log"
+				return 1
+			}
+			;;
+	esac
+
 	run_ext4_profile MBPTEST_PLAIN "$scratch_dev" plain-ext4 || return 1
-	cleanup_stack
+	cleanup_stack || {
+		printf 'stack_result=fail-cleanup\n' >> "$probe_log"
+		return 1
+	}
 	scratch_siblings_are_read_only || {
 		printf 'stack_result=fail-sibling-protection\n' >> "$probe_log"
 		return 1
 	}
+
+	case "$diagnostic_profile" in
+		plain-heavy-stack)
+			run_installer_plain_heavy || return 1
+			cleanup_stack || {
+				printf 'stack_result=fail-cleanup\n' >> "$probe_log"
+				return 1
+			}
+			printf 'stack_result=pass\n' >> "$probe_log"
+			return 0
+			;;
+	esac
 
 	# Public, deterministic test-only key. This mapping is ephemeral and is
 	# used only to exercise the dm-crypt I/O path; it is not a LUKS volume.
@@ -573,7 +980,6 @@ run_filesystem_stack_probe() {
 		return 1
 	fi
 	stack_mapping_active=1
-	mdev -s
 	dmsetup mknodes "$stack_mapping" >> "$probe_log" 2>&1 || true
 	stack_mapper="/dev/mapper/$stack_mapping"
 	if [ ! -b "$stack_mapper" ]; then
@@ -585,18 +991,62 @@ run_filesystem_stack_probe() {
 		return 1
 	fi
 
+	case "$diagnostic_profile" in
+		flush-reg-stack)
+			printf '\n### dmcrypt-raw durable sync\n' >> "$probe_log"
+			echo "mbp-ahci: begin dmcrypt-raw durable-sync probe" > /dev/kmsg
+			timeout -s KILL 90 mapper-durable-sync-probe "$stack_mapper" \
+				dmcrypt-raw >> "$probe_log" 2>&1
+			dmcrypt_raw_rc=$?
+			echo "mbp-ahci: end dmcrypt-raw durable-sync probe rc=$dmcrypt_raw_rc" > /dev/kmsg
+			if [ "$dmcrypt_raw_rc" -eq 0 ]; then
+				printf 'dmcrypt-raw_result=pass\n' >> "$probe_log"
+			else
+				printf 'dmcrypt-raw_result=fail rc=%s\n' "$dmcrypt_raw_rc" >> "$probe_log"
+				return 1
+			fi
+			scratch_siblings_are_read_only || {
+				printf 'stack_result=fail-sibling-protection\n' >> "$probe_log"
+				return 1
+			}
+			;;
+	esac
+
 	run_ext4_profile MBPTEST_CRYPT "$stack_mapper" dmcrypt-ext4 || return 1
-	cleanup_stack
+	cleanup_stack || {
+		printf 'stack_result=fail-cleanup\n' >> "$probe_log"
+		return 1
+	}
 	printf 'stack_result=pass\n' >> "$probe_log"
 	return 0
 }
 
-trap 'cleanup_and_reprotect' 0 1 2 15
+emergency_cleanup() {
+	trap - 0 1 2 15
+	rm -f "$ahci_sample_enable"
+	if [ -n "$ahci_sampler_pid" ]; then
+		kill -TERM "$ahci_sampler_pid" 2>/dev/null || true
+		wait "$ahci_sampler_pid" 2>/dev/null || true
+		ahci_sampler_pid=
+	fi
+	cleanup_and_reprotect || immediate_poweroff
+}
+trap 'emergency_cleanup' 0
+trap 'emergency_cleanup; exit 130' 1 2 15
 probe_rc=1
+# Userspace BAR sampling is best-effort: ahci already owns resource0, so open
+# may fail with EBUSY. Do not fail-closed on sampler start; stack probe still runs.
+failure_stage=ahci-sampler-start
+if ! start_ahci_sampler; then
+	printf 'warning: AHCI port sampler failed to start (continuing without samples)\n' > "$probe_log"
+	stop_ahci_sampler
+	ahci_sampler_rc=1
+	ahci_sample_count=0
+fi
 failure_stage=scratch-write-enable
 if enable_scratch_write; then
 	case "$diagnostic_profile" in
-		legacy-stack|msi-stack|msi-noncq-stack)
+		legacy-stack|flush-reg-stack|plain-heavy-stack|msi-stack|msi-noncq-stack)
 			failure_stage=filesystem-stack-probe
 			echo "mbp-ahci: begin guarded ext4 and dm-crypt stack probe" > /dev/kmsg
 			run_filesystem_stack_probe
@@ -614,6 +1064,7 @@ if enable_scratch_write; then
 else
 	printf 'error: failed to establish scratch-only write state\n' > "$probe_log"
 fi
+stop_ahci_sampler
 
 if [ "$trace_enabled" -eq 1 ]; then
 	echo 0 > "$trace_root/tracing_on"
@@ -623,14 +1074,12 @@ else
 fi
 
 failure_stage=post-probe-reprotection
-cleanup_and_reprotect
+cleanup_and_reprotect || immediate_poweroff
 trap - 0 1 2 15
 
 diagnostic_rc=0
 [ "$probe_rc" -eq 0 ] || diagnostic_rc=1
-grep -Eq 'ata_qc_issue:.*cmd=ATA_CMD_FLUSH(_EXT)?([[:space:]]|$)' \
-	"$trace_log" 2>/dev/null || diagnostic_rc=1
-grep -q 'ata_qc_complete_done:' "$trace_log" 2>/dev/null || diagnostic_rc=1
+awk -f /etc/check-storage-trace.awk "$trace_log" || diagnostic_rc=1
 awk '
 	/entries-in-buffer\/entries-written:/ {
 		split($3, counts, "/")
@@ -644,19 +1093,39 @@ awk '
 	}
 ' "$trace_log" || diagnostic_rc=1
 case "$diagnostic_profile" in
-	legacy-stack|msi-stack|msi-noncq-stack)
+	legacy-stack|flush-reg-stack|msi-stack|msi-noncq-stack)
 		grep -Fxq 'plain-ext4_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
 		grep -Fxq 'dmcrypt-ext4_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
 		grep -Fxq 'stack_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
 		;;
+	plain-heavy-stack)
+		grep -Fxq 'plain-ext4_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
+		grep -Fxq 'sustained-darwin-mirror_result=pass' "$probe_log" 2>/dev/null || \
+			diagnostic_rc=1
+		grep -Fxq 'installer-plain-heavy_result=pass' "$probe_log" 2>/dev/null || \
+			diagnostic_rc=1
+		grep -Fxq 'stack_result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1
+		;;
 	*) grep -Fxq 'result=pass' "$probe_log" 2>/dev/null || diagnostic_rc=1 ;;
 esac
+case "$diagnostic_profile" in
+	flush-reg-stack)
+		grep -Fxq 'sustained-darwin-mirror_result=pass' "$probe_log" 2>/dev/null || \
+			diagnostic_rc=1
+		grep -Fxq 'dmcrypt-raw_result=pass' "$probe_log" 2>/dev/null || \
+			diagnostic_rc=1
+		;;
+esac
+# Userspace AHCI samples are optional; empty/missing samples do not fail the run.
 [ "$(blockdev --getro "$target_disk" 2>/dev/null)" = 1 ] || diagnostic_rc=1
 for child in /sys/class/block/"$target_name"*; do
 	[ -e "$child" ] || continue
 	name=$(basename "$child")
 	[ "$(blockdev --getro "/dev/$name" 2>/dev/null)" = 1 ] || diagnostic_rc=1
 done
+[ "$capture_backup_protected" -eq 1 ] || diagnostic_rc=1
+[ ! -e "/dev/$capture_disk" ] || diagnostic_rc=1
+[ ! -e "/dev/$capture_backup_part" ] || diagnostic_rc=1
 
 error_log=/run/ata-error-scan.txt
 if dmesg | grep -Ei 'ata[0-9].*(exception|failed command|hard reset|hard resetting|frozen|timed out|timeout)|I/O error|blk_update_request|Buffer I/O error|EXT4-fs (error|warning)|device-mapper:.*(error|fail)|dm-crypt:.*(error|fail)' > "$error_log"; then
@@ -664,6 +1133,13 @@ if dmesg | grep -Ei 'ata[0-9].*(exception|failed command|hard reset|hard resetti
 else
 	printf 'none\n' > "$error_log"
 fi
+case "$diagnostic_profile" in
+	flush-reg-stack|plain-heavy-stack)
+		if ! dmesg | grep -q 'mbp-ahci-flush-reg when=issue'; then
+			diagnostic_rc=1
+		fi
+		;;
+esac
 
 collect() {
 	printf '## safety and profile\n'
@@ -671,6 +1147,8 @@ collect() {
 	printf 'kernel=%s\n' "$kernel_release"
 	printf 'command_line='; cat /proc/cmdline
 	printf 'capture_device=%s\n' "$capture_dev"
+	printf 'capture_backup_partition=%s\n' "/dev/$capture_backup_part"
+	printf 'capture_backup_protected_and_hidden=%s\n' "$capture_backup_protected"
 	printf 'target_disk=%s\n' "$target_disk"
 	printf 'target_read_only_after=%s\n' "$(blockdev --getro "$target_disk" 2>/dev/null || printf unknown)"
 	printf 'scratch_partition=%s\n' "$scratch_dev"
@@ -681,9 +1159,15 @@ collect() {
 	printf 'scratch_size_bytes=%s\n' "$scratch_size"
 	printf 'scratch_start_sector=%s\n' "$scratch_start"
 	printf 'partition_count=%s\n' "$partition_count"
+	printf 'build_scratch_partition_number=%s\n' "$expected_scratch_partition"
+	printf 'build_scratch_start_sector=%s\n' "$expected_scratch_start"
+	printf 'build_scratch_sector_count=%s\n' "$expected_scratch_sectors"
+	printf 'build_target_sector_count=%s\n' "$expected_target_sectors"
 	printf 'controller=%s\n' "$controller"
 	printf 'queue_depth=%s\n' "$queue_depth"
 	printf 'msi_vector_count=%s\n' "$msi_count"
+	printf 'ahci_sampler_rc=%s\n' "$ahci_sampler_rc"
+	printf 'ahci_sample_count=%s\n' "$ahci_sample_count"
 	printf 'probe_rc=%s\n' "$probe_rc"
 	printf 'diagnostic_rc=%s\n' "$diagnostic_rc"
 	if [ "$diagnostic_rc" -eq 0 ]; then
@@ -698,6 +1182,13 @@ collect() {
 
 	printf '\n## ATA error scan\n'
 	cat "$error_log"
+
+	printf '\n## AHCI port samples\n'
+	if [ -f "$ahci_sample_log" ]; then
+		cat "$ahci_sample_log"
+	else
+		printf 'ahci_samples_missing=1\n'
+	fi
 
 	printf '\n## block trace\n'
 	cat "$trace_log"
@@ -741,8 +1232,22 @@ collect() {
 }
 
 collect 2>&1 | sanitize | tee "$log"
-printf '%s  %s\n' "$(sha256sum "$log" | cut -d' ' -f1)" \
-	"$(basename "$log")" > "$out_dir/SHA256SUMS"
+if [ -f "$ahci_sample_log" ]; then
+	cp "$ahci_sample_log" "$out_dir/ahci-samples.txt" || true
+fi
+dmesg | grep 'mbp-ahci-flush-reg' > "$out_dir/ahci-flush-reg.txt" || \
+	: > "$out_dir/ahci-flush-reg.txt"
+{
+	printf '%s  %s\n' "$(sha256sum "$log" | cut -d' ' -f1)" "$(basename "$log")"
+	if [ -f "$out_dir/ahci-samples.txt" ]; then
+		printf '%s  %s\n' \
+			"$(sha256sum "$out_dir/ahci-samples.txt" | cut -d' ' -f1)" \
+			'ahci-samples.txt'
+	fi
+	printf '%s  %s\n' \
+		"$(sha256sum "$out_dir/ahci-flush-reg.txt" | cut -d' ' -f1)" \
+		'ahci-flush-reg.txt'
+} > "$out_dir/SHA256SUMS"
 printf 'kernel=%s\nprofile=%s\nprobe_rc=%s\ndiagnostic_rc=%s\n' \
 	"$kernel_release" "$diagnostic_profile" "$probe_rc" "$diagnostic_rc" \
 	> "$out_dir/COMPLETE"

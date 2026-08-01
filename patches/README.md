@@ -13,7 +13,7 @@ Each patch must include:
 - the recovery path;
 - before/after trace evidence with sensitive fields removed.
 
-## Current diagnostic patch
+## Current diagnostic patches
 
 `0001-ahci-mbp11-3-opt-in-msi-diagnostic.patch` is an external-appliance
 experiment, not a proposed upstream fix. Bounded read-only MSI tests passed,
@@ -23,3 +23,9 @@ safety from the read-only result. The only narrower profile prepared forces
 non-NCQ, but it was never physically run, its deterministic rebuild was
 canceled, and the disposable partition no longer exists. It is not currently
 authorized or a ready artifact.
+
+`0002-ahci-mbp11-3-flush-reg-sample.patch` is an opt-in `libahci` diagnostic for
+the flush-reg-stack appliance. It samples AHCI host/port registers around
+outstanding `FLUSH CACHE EXT` so long post-issue delays can be classified as
+PxCI-held versus PxCI-cleared-early. It does not change issue or completion
+policy and must not be treated as a performance fix.

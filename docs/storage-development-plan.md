@@ -1,11 +1,12 @@
 # Storage Development Plan
 
-Last updated: 2026-07-18
+Last updated: 2026-07-29
 
-Current status: paused. The temporary internal scratch partition has been
-removed and full-size APFS restored and verified. No physical build, USB
-provisioning, repartitioning, or reboot should occur without fresh explicit
-authorization.
+Current status: storage-only investigation active, physical work gated. The
+internal disk retains Big Sur and Windows partitions but has no disposable
+scratch partition. The next legacy-INTx trace artifact must be bound to freshly
+recorded private GPT identity and geometry. No physical build, USB provisioning,
+repartitioning, or reboot should occur without fresh explicit authorization.
 
 ## What We Are Actually Trying To Build
 
@@ -264,8 +265,8 @@ route.
 Booting Linux externally still loads the AHCI driver for the internal
 controller, which is enough for read-only state captures and safe command
 latency probes. Real filesystem workloads against the internal SSD require a
-dedicated disposable internal test partition created only after a verified
-backup.
+dedicated disposable internal test partition created with explicit
+authorization.
 
 The former recovery-bootstrap USB was repurposed with explicit permission as
 the lab medium. Its last verified payload is the archived Windows

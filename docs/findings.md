@@ -327,8 +327,8 @@ error-free, but should expect the same slow flush tails under durable write
 pressure. Do not treat a newer distro kernel alone as a cure unless it changes
 that path with evidence.
 
-Further flush-pattern comparison work is tracked in-tree under
-`docs/flush-pattern-comparison.md` when that note is present. Linux baseline
+Further work follows
+[`flush-pattern-comparison.md`](flush-pattern-comparison.md). Linux baseline
 from the flush-reg capture: 112 `FLUSH_EXT`, 571 `FPDMA_WRITE`, 26 long
 flushes all `ci_held`, flush completion p50 18.113 ms / p95 1.133 s.
 

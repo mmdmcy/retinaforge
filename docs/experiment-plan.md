@@ -8,13 +8,10 @@ route; preserve the original SSD and pursue the guarded legacy-INTx flush trace
 before any persistent installation. The storage findings below still reject MSI
 plus NCQ writes. See [`linux-native-roadmap.md`](linux-native-roadmap.md).
 
-Status on 2026-07-25: storage-only research has resumed, but physical work
-remains gated. The temporary scratch partition has been removed; APFS fills the
-internal SSD and passed disk and volume verification. A stock legacy-INTx
-command-trace artifact is ready. Linux graphics host-side design may proceed
-separately, but do not repartition, provision removable media, reboot the
-target, or run a physical write test without the user-present authorization
-checkpoints in stage 15.
+The superseded 2026-07-25 APFS-only state is retained in the private chronology.
+Physical work remains gated: do not repartition, provision removable media,
+reboot the target, or run a physical write test without the user-present
+authorization checkpoints in stage 15.
 Baseline, NCQ, FUA, cache-mode, power-management, interrupt, raw ATA opcode,
 non-NCQ FUA, and barrier experiments are complete.
 The side-by-side non-NCQ FUA kernel was rejected before installation because a
@@ -185,12 +182,11 @@ on the exact machine. This still does not establish a latency fix.
 
 ### 13. Disposable legacy-INTx versus MSI write comparison (complete, MSI rejected)
 
-Only after stage 12 passes and a current backup exists, create explicitly
-disposable internal test space and compare the same bounded durability probe
-under stock legacy INTx and diagnostic MSI. Keep kernel, NCQ state, request
-size, cache policy, and workload identical. The test must target the internal
-Apple SSD because an external virtual or USB disk does not exercise its
-firmware path.
+Only after stage 12 passes, create explicitly disposable internal test space
+and compare the same bounded durability probe under stock legacy INTx and
+diagnostic MSI. Keep kernel, NCQ state, request size, cache policy, and
+workload identical. The test must target the internal Apple SSD because an
+external virtual or USB disk does not exercise its firmware path.
 
 Proceed toward a production quirk only if MSI cuts durable-write tail latency
 substantially and repeated cold/warm boots, stress, logs, and recovery checks
@@ -227,7 +223,7 @@ queue-depth-1 compatibility path; it would not justify enabling MSI with NCQ
 or replacing the generic upstream quirk. It must then be compared with legacy
 INTx plus non-NCQ before attributing any latency change to MSI.
 
-### 15. Legacy command-issue timing (artifact ready; physical run pending)
+### 15. Legacy command-issue timing (harness revised; full build pending)
 
 Repeat the exact current-upstream legacy filesystem workload with
 `libata:ata_qc_issue` and completion tracepoints. Pair each actual
@@ -237,7 +233,7 @@ queue delay before command issue or controller/device execution after issue.
 That distinction decides whether the next code belongs in libata scheduling,
 AHCI controller handling, or neither.
 
-The storage-only appliance for this stage was rebuilt on 2026-07-24 from
+The storage-only appliance for this stage was rebuilt on 2026-07-30 from
 authenticated upstream Linux `7.1.3` without an AHCI patch. It requires the
 block issue/completion and libata issue/completion/failure tracepoints, uses the
 monotonic trace clock, reserves a 32 MiB trace buffer, and fails the run if an
@@ -249,15 +245,19 @@ analyzer now reports:
 - ATA flush issue to completion time;
 - failed and unmatched flush commands.
 
-Two clean builds in separate output trees were byte-identical. The EFI loader
-SHA-256 is
+Two clean builds in separate output trees were byte-identical. The
+EFI loader SHA-256 was
 `d2888d105727f622f34bb174e3cdf14e2aaa56a3e7e792bcea6bfdbe921a6f93`;
-the kernel SHA-256 is
-`253073e46d876c289bfafd1f3cdfa021bdac6f9634a912deed6390c0ddc5d5a8`.
+the kernel SHA-256 was
+`68b0c19409eafc19c955da74f3cd06169ca6f73a750cf7b0157d86998805e71f`.
 OVMF negative tests proved that the appliance powers off with a checksummed
 refusal on the wrong DMI and, with exact target DMI plus SSD model, refuses the
 current no-scratch layout. The synthetic target image remained byte-identical.
 
-No USB has been provisioned and no physical disk has been changed. The real
-run still requires a current backup, explicit authorization, and recreation of
-the isolated final `MBPTEST` scratch partition from macOS.
+The guarded writer provisioned the appliance to the USB's validated FAT lab
+partition on 2026-07-30 while preserving its separate APFS partition. Both
+write-time and independent read-only checksums passed, as did FAT and GPT
+verification. The real run still requires explicit authorization plus creation
+and inventory of the exact isolated final `MBPTEST` scratch geometry from
+macOS so it matches the already provisioned USB. No physical Linux boot has
+occurred. The user has waived any backup prerequisite.

@@ -1,0 +1,211 @@
+diff --git a/drivers/ata/libahci.c b/drivers/ata/libahci.c
+index c79abdfcd..65088e5a7 100644
+--- a/drivers/ata/libahci.c
++++ b/drivers/ata/libahci.c
+@@ -23,6 +23,8 @@
+ #include <linux/nospec.h>
+ #include <linux/blkdev.h>
+ #include <linux/delay.h>
++#include <linux/workqueue.h>
++#include <linux/ktime.h>
+ #include <linux/interrupt.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/device.h>
+@@ -43,6 +45,181 @@ MODULE_PARM_DESC(skip_host_reset, "skip global host reset (0=don't skip, 1=skip)
+ module_param_named(ignore_sss, ahci_ignore_sss, int, 0444);
+ MODULE_PARM_DESC(ignore_sss, "Ignore staggered spinup flag (0=don't ignore, 1=ignore)");
+ 
++/*
++ * Opt-in diagnostic for MacBookPro11,3 AHCI research. Sample host/port
++ * registers while FLUSH CACHE EXT is outstanding so post-issue delay can be
++ * classified as PxCI-held (device/controller) versus PxCI-cleared-early
++ * (completion observed late). Does not change issue/completion policy.
++ */
++static bool mbp11_3_flush_reg_sample;
++module_param_named(mbp11_3_flush_reg_sample,
++		   mbp11_3_flush_reg_sample, bool, 0444);
++MODULE_PARM_DESC(mbp11_3_flush_reg_sample,
++		 "Sample AHCI registers during outstanding FLUSH CACHE EXT");
++
++static const unsigned int mbp11_3_flush_sample_delays_ms[] = {
++	50, 100, 500, 1000
++};
++
++struct mbp11_3_flush_sample {
++	struct ata_port *ap;
++	struct delayed_work dwork;
++	u8 tag;
++	u64 issue_ns;
++	unsigned int delay_ms;
++	bool pending;
++};
++
++static struct mbp11_3_flush_sample mbp11_3_flush_samples[
++	ARRAY_SIZE(mbp11_3_flush_sample_delays_ms)];
++static DEFINE_SPINLOCK(mbp11_3_flush_sample_lock);
++static u8 mbp11_3_flush_active_tag = 0xff;
++static u64 mbp11_3_flush_issue_ns;
++static struct ata_port *mbp11_3_flush_ap;
++
++static void mbp11_3_flush_dump(struct ata_port *ap, const char *when,
++			       u8 tag, u64 issue_ns)
++{
++	struct ahci_host_priv *hpriv;
++	void __iomem *host_mmio;
++	void __iomem *port_mmio;
++	u32 host_is, pxis, pxci, pxsact, pxtfd, pxserr;
++
++	if (!ap || !ap->host || !ap->host->private_data)
++		return;
++	hpriv = ap->host->private_data;
++	host_mmio = hpriv->mmio;
++	port_mmio = ahci_port_base(ap);
++	host_is = readl(host_mmio + HOST_IRQ_STAT);
++	pxis = readl(port_mmio + PORT_IRQ_STAT);
++	pxci = readl(port_mmio + PORT_CMD_ISSUE);
++	pxsact = readl(port_mmio + PORT_SCR_ACT);
++	pxtfd = readl(port_mmio + PORT_TFDATA);
++	pxserr = readl(port_mmio + PORT_SCR_ERR);
++	pr_info("mbp-ahci-flush-reg when=%s tag=%u age_ms=%llu host_is=0x%x pxis=0x%x pxci=0x%x pxsact=0x%x pxtfd=0x%x pxserr=0x%x\n",
++		when, tag,
++		issue_ns ? (ktime_get_ns() - issue_ns) / 1000000ULL : 0ULL,
++		host_is, pxis, pxci, pxsact, pxtfd, pxserr);
++}
++
++static void mbp11_3_flush_sample_work(struct work_struct *work)
++{
++	struct mbp11_3_flush_sample *sample =
++		container_of(to_delayed_work(work), struct mbp11_3_flush_sample,
++			     dwork);
++	unsigned long flags;
++	struct ata_port *ap;
++	u8 tag;
++	u64 issue_ns;
++	bool still_active = false;
++	struct ata_queued_cmd *qc;
++
++	spin_lock_irqsave(&mbp11_3_flush_sample_lock, flags);
++	sample->pending = false;
++	ap = sample->ap;
++	tag = sample->tag;
++	issue_ns = sample->issue_ns;
++	if (ap && mbp11_3_flush_active_tag == tag &&
++	    mbp11_3_flush_ap == ap) {
++		qc = __ata_qc_from_tag(ap, tag);
++		if (qc && (qc->flags & ATA_QCFLAG_ACTIVE))
++			still_active = true;
++	}
++	spin_unlock_irqrestore(&mbp11_3_flush_sample_lock, flags);
++
++	if (still_active)
++		mbp11_3_flush_dump(ap, "timer", tag, issue_ns);
++}
++
++static void mbp11_3_flush_sample_ensure_inited(void)
++{
++	static bool inited;
++	unsigned int i;
++
++	if (inited)
++		return;
++	for (i = 0; i < ARRAY_SIZE(mbp11_3_flush_samples); i++)
++		INIT_DELAYED_WORK(&mbp11_3_flush_samples[i].dwork,
++				  mbp11_3_flush_sample_work);
++	inited = true;
++}
++
++static void mbp11_3_flush_sample_arm(struct ata_queued_cmd *qc)
++{
++	unsigned long flags;
++	unsigned int i;
++
++	if (!mbp11_3_flush_reg_sample)
++		return;
++	if (qc->tf.command != ATA_CMD_FLUSH_EXT)
++		return;
++
++	mbp11_3_flush_sample_ensure_inited();
++
++	spin_lock_irqsave(&mbp11_3_flush_sample_lock, flags);
++	mbp11_3_flush_ap = qc->ap;
++	mbp11_3_flush_active_tag = qc->hw_tag;
++	mbp11_3_flush_issue_ns = ktime_get_ns();
++	for (i = 0; i < ARRAY_SIZE(mbp11_3_flush_samples); i++) {
++		struct mbp11_3_flush_sample *sample = &mbp11_3_flush_samples[i];
++
++		sample->ap = qc->ap;
++		sample->tag = qc->hw_tag;
++		sample->issue_ns = mbp11_3_flush_issue_ns;
++		sample->delay_ms = mbp11_3_flush_sample_delays_ms[i];
++		sample->pending = true;
++		mod_delayed_work(system_wq, &sample->dwork,
++				 msecs_to_jiffies(sample->delay_ms));
++	}
++	spin_unlock_irqrestore(&mbp11_3_flush_sample_lock, flags);
++	mbp11_3_flush_dump(qc->ap, "issue", qc->hw_tag, mbp11_3_flush_issue_ns);
++}
++
++/*
++ * Called from the AHCI interrupt completion path. Never cancel_delayed_work_sync
++ * here. Clear the active tag so timer samples stop, cancel without waiting, and
++ * emit one complete dump only when the armed FLUSH tag is no longer ACTIVE.
++ */
++static void mbp11_3_flush_sample_complete(struct ata_port *ap)
++{
++	unsigned long flags;
++	unsigned int i;
++	u8 tag;
++	u64 issue_ns;
++	struct ata_port *flush_ap;
++	struct ata_queued_cmd *qc;
++	bool finished = false;
++
++	if (!mbp11_3_flush_reg_sample)
++		return;
++
++	spin_lock_irqsave(&mbp11_3_flush_sample_lock, flags);
++	flush_ap = mbp11_3_flush_ap;
++	tag = mbp11_3_flush_active_tag;
++	issue_ns = mbp11_3_flush_issue_ns;
++	if (flush_ap != ap || tag == 0xff) {
++		spin_unlock_irqrestore(&mbp11_3_flush_sample_lock, flags);
++		return;
++	}
++	qc = __ata_qc_from_tag(ap, tag);
++	if (qc && (qc->flags & ATA_QCFLAG_ACTIVE)) {
++		spin_unlock_irqrestore(&mbp11_3_flush_sample_lock, flags);
++		return;
++	}
++	mbp11_3_flush_active_tag = 0xff;
++	mbp11_3_flush_ap = NULL;
++	for (i = 0; i < ARRAY_SIZE(mbp11_3_flush_samples); i++) {
++		mbp11_3_flush_samples[i].pending = false;
++		cancel_delayed_work(&mbp11_3_flush_samples[i].dwork);
++	}
++	finished = true;
++	spin_unlock_irqrestore(&mbp11_3_flush_sample_lock, flags);
++
++	if (finished)
++		mbp11_3_flush_dump(ap, "complete", tag, issue_ns);
++}
++
++
+ static int ahci_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
+ 			unsigned hints);
+ static ssize_t ahci_led_show(struct ata_port *ap, char *buf);
+@@ -1890,6 +2067,7 @@ static void ahci_qc_complete(struct ata_port *ap, void __iomem *port_mmio)
+ 		ehi->action |= ATA_EH_RESET;
+ 		ata_port_freeze(ap);
+ 	}
++	mbp11_3_flush_sample_complete(ap);
+ }
+ 
+ static void ahci_handle_port_interrupt(struct ata_port *ap,
+@@ -2071,6 +2249,7 @@ unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
+ 	writel(1 << qc->hw_tag, port_mmio + PORT_CMD_ISSUE);
+ 
+ 	ahci_sw_activity(qc->dev->link);
++	mbp11_3_flush_sample_arm(qc);
+ 
+ 	return 0;
+ }

@@ -15,6 +15,7 @@ grub_config=${GRUB_CONFIG:-$repo_root/scripts/grub/readonly-baseline-grub.cfg}
 init_script=${INIT_SCRIPT:-$repo_root/scripts/initramfs/readonly-baseline-init}
 initramfs_static_binaries=${INITRAMFS_STATIC_BINARIES:-}
 initramfs_dynamic_binaries=${INITRAMFS_DYNAMIC_BINARIES:-}
+storage_trace_checker=$repo_root/scripts/initramfs/check-storage-trace.awk
 enable_filesystem_stack=${ENABLE_FILESYSTEM_STACK:-0}
 enable_igpu_graphics=${ENABLE_IGPU_GRAPHICS:-0}
 jobs=${JOBS:-$(nproc)}
@@ -27,6 +28,7 @@ kernel_localversion=${KERNEL_LOCALVERSION:--mbp-ahci-baseline}
 expected_kernel_release=${EXPECTED_KERNEL_RELEASE:-$expected_version$kernel_localversion}
 kernel_cmdline=${KERNEL_CMDLINE:-'rdinit=/init console=tty0 loglevel=7 printk.time=1 nomodeset panic=30'}
 expected_kernel_diff=${EXPECTED_KERNEL_DIFF:-}
+expected_kernel_diff_paths=${EXPECTED_KERNEL_DIFF_PATHS:-drivers/ata/ahci.c}
 
 die() {
 	printf 'error: %s\n' "$*" >&2
@@ -51,6 +53,7 @@ printf '#include <gelf.h>\n' | gcc -E -x c - >/dev/null 2>&1 || \
 grub-script-check "$grub_config"
 
 kernel_source=$(realpath "$kernel_source")
+init_script=$(realpath "$init_script")
 work_root=$(realpath -m "$work_root")
 build_parent=$(realpath -m "$build_root")
 case "$work_root/" in
@@ -59,17 +62,67 @@ case "$work_root/" in
 esac
 [[ $work_root != "$build_parent" ]] || die "refusing to use the build root itself"
 
+if [[ $init_script == "$repo_root/scripts/initramfs/write-ab-init" ]]; then
+	[[ -f $storage_trace_checker ]] || die "storage trace checker not found: $storage_trace_checker"
+	geometry_variables=(
+		SCRATCH_PARTITION_NUMBER
+		SCRATCH_PARTITION_COUNT
+		SCRATCH_START_SECTOR
+		SCRATCH_SECTORS
+		TARGET_SECTORS
+		CAPTURE_DISK_SECTORS
+	)
+	for variable in "${geometry_variables[@]}"; do
+		value=${!variable:-}
+		[[ $value =~ ^(0|[1-9][0-9]*)$ ]] || \
+			die "$variable must be set to the freshly recorded numeric geometry"
+	done
+	capture_lab_partuuid=${CAPTURE_LAB_PARTUUID:-}
+	[[ $capture_lab_partuuid =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] || \
+		die 'CAPTURE_LAB_PARTUUID must match the approved lab partition'
+	capture_lab_partuuid=${capture_lab_partuuid,,}
+	capture_backup_partuuid=${CAPTURE_BACKUP_PARTUUID:-}
+	[[ $capture_backup_partuuid =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] || \
+		die 'CAPTURE_BACKUP_PARTUUID must match the approved backup partition'
+	capture_backup_partuuid=${capture_backup_partuuid,,}
+	((SCRATCH_PARTITION_NUMBER > 0)) || die 'scratch partition number must be positive'
+	((SCRATCH_PARTITION_COUNT >= SCRATCH_PARTITION_NUMBER)) || \
+		die 'scratch partition number exceeds the recorded partition count'
+	((SCRATCH_SECTORS >= 8388608 && SCRATCH_SECTORS <= 33554432)) || \
+		die 'scratch size is outside the 4-16 GiB safety window'
+	((SCRATCH_START_SECTOR + SCRATCH_SECTORS <= TARGET_SECTORS)) || \
+		die 'scratch geometry extends beyond the target disk'
+	((TARGET_SECTORS - SCRATCH_START_SECTOR - SCRATCH_SECTORS <= 4096)) || \
+		die 'scratch geometry is not at the end of the target disk'
+	((SCRATCH_START_SECTOR * 10 >= TARGET_SECTORS * 9)) || \
+		die 'scratch geometry is not in the final ten percent of the target disk'
+	kernel_cmdline+=" mbp_ahci.scratch_partition=$SCRATCH_PARTITION_NUMBER"
+	kernel_cmdline+=" mbp_ahci.partition_count=$SCRATCH_PARTITION_COUNT"
+	kernel_cmdline+=" mbp_ahci.scratch_start=$SCRATCH_START_SECTOR"
+	kernel_cmdline+=" mbp_ahci.scratch_sectors=$SCRATCH_SECTORS"
+	kernel_cmdline+=" mbp_ahci.target_sectors=$TARGET_SECTORS"
+	kernel_cmdline+=" mbp_ahci.capture_disk_sectors=$CAPTURE_DISK_SECTORS"
+	kernel_cmdline+=" mbp_ahci.capture_lab_partuuid=$capture_lab_partuuid"
+	kernel_cmdline+=" mbp_ahci.capture_backup_partuuid=$capture_backup_partuuid"
+fi
+
 actual_commit=$(git -C "$kernel_source" rev-parse HEAD)
 [[ $actual_commit == "$expected_commit" ]] || \
 	die "expected Linux $expected_version commit $expected_commit, found $actual_commit"
 if [[ -n $expected_kernel_diff ]]; then
 	expected_kernel_diff=$(realpath "$expected_kernel_diff")
 	[[ -f $expected_kernel_diff ]] || die "expected kernel diff not found: $expected_kernel_diff"
+	# shellcheck disable=SC2206
+	diff_paths=( $expected_kernel_diff_paths )
+	[[ ${#diff_paths[@]} -ge 1 ]] || die 'EXPECTED_KERNEL_DIFF_PATHS is empty'
 	cmp -s "$expected_kernel_diff" \
-		<(git -C "$kernel_source" diff --no-ext-diff --binary -- drivers/ata/ahci.c) || \
+		<(git -C "$kernel_source" diff --no-ext-diff --binary -- "${diff_paths[@]}") || \
 		die "kernel source diff does not exactly match $expected_kernel_diff"
-	[[ -z $(git -C "$kernel_source" status --porcelain --untracked-files=normal | \
-		grep -v '^ M drivers/ata/ahci.c$') ]] || \
+	remaining_status=$(git -C "$kernel_source" status --porcelain --untracked-files=normal)
+	for path in "${diff_paths[@]}"; do
+		remaining_status=$(printf '%s\n' "$remaining_status" | grep -v "^ M ${path}$" || true)
+	done
+	[[ -z $remaining_status ]] || \
 		die "kernel source contains changes outside the reviewed AHCI patch"
 else
 	[[ -z $(git -C "$kernel_source" status --porcelain --untracked-files=no) ]] || \
@@ -152,6 +205,10 @@ fi
 install -m 0755 \
 	"$init_script" \
 	"$initramfs_root/init"
+if [[ $init_script == "$repo_root/scripts/initramfs/write-ab-init" ]]; then
+	install -m 0644 "$storage_trace_checker" \
+		"$initramfs_root/etc/check-storage-trace.awk"
+fi
 for binary in $initramfs_static_binaries; do
 	[[ -x $binary ]] || die "extra initramfs binary is not executable: $binary"
 	file "$binary" | grep -q 'statically linked' || \
@@ -306,6 +363,14 @@ embedded_init_hash=$(gzip -dc "$kernel_out/usr/initramfs_inc_data" | \
 source_init_hash=$(sha256sum "$init_script" | cut -d' ' -f1)
 [[ $embedded_init_hash == "$source_init_hash" ]] || \
 	die "embedded init does not match the reviewed initramfs source"
+if [[ $init_script == "$repo_root/scripts/initramfs/write-ab-init" ]]; then
+	embedded_checker_hash=$(gzip -dc "$kernel_out/usr/initramfs_inc_data" | \
+		cpio -i --quiet --to-stdout etc/check-storage-trace.awk | \
+		sha256sum | cut -d' ' -f1)
+	source_checker_hash=$(sha256sum "$storage_trace_checker" | cut -d' ' -f1)
+	[[ $embedded_checker_hash == "$source_checker_hash" ]] || \
+		die "embedded trace checker does not match the reviewed source"
+fi
 
 kernel_image=$artifact_root/lab/vmlinuz
 bootloader_image=$artifact_root/EFI/BOOT/BOOTX64.EFI

@@ -42,6 +42,7 @@ case "$profile" in
 		kernel_cmdline='rdinit=/init console=tty0 loglevel=7 printk.time=1 nomodeset panic=30 mbp_ahci.write_test=1'
 		;;
 	msi-ncq-write)
+		die 'msi-ncq-write is permanently rejected for physical writable use'
 		work_root=$repo_root/build/write-ab-msi-ncq-v7.1.3
 		localversion=-mbp-ahci-msi-ncq-write
 		kernel_cmdline='rdinit=/init console=tty0 loglevel=7 printk.time=1 nomodeset panic=30 mbp_ahci.write_test=1 ahci.mbp11_3_msi_diagnostic=1'
