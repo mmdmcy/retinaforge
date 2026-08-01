@@ -52,8 +52,8 @@ Research write-up:
 
 - Same LAN host for macOS and Linux (whichever is booted).
 - macOS SSH: `known_hosts_macos_mbp` + existing ed25519 key.
-- Linux SSH: `known_hosts_cachyos` + same key family; passwordless sudo on the
-  Linux lab user.
+- Linux SSH: `known_hosts_cachyos` + same key family; sudo configured for
+  unattended lab commands on the Linux user.
 - Agent may reboot the Linux lab OS and reconnect when that OS is the running
   system.
 

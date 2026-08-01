@@ -268,9 +268,10 @@ an experiment, not a ready artifact or solution.
 
 After earlier storage tests, the temporary scratch partition was removed and
 later recreated for the 2026-07-30 legacy command-trace boot. The target still
-runs Big Sur `11.7.11` with no internally installed Linux system or custom
-kernel. Graphics work remains deferred. Writable MSI plus NCQ must not be
-repeated unchanged.
+runs Big Sur `11.7.11` and, as of the later dual-boot lab state, can also boot
+an internal CachyOS install for graphics and storage experiments. Intel panel
+ownership under Linux was verified on 2026-08-01 (see graphics subsection
+below). Writable MSI plus NCQ must not be repeated unchanged.
 
 The stock legacy-INTx filesystem-stack appliance completed its physical run on
 authenticated Linux `7.1.3` with block and libata flush timing enabled. Both
@@ -326,8 +327,8 @@ error-free, but should expect the same slow flush tails under durable write
 pressure. Do not treat a newer distro kernel alone as a cure unless it changes
 that path with evidence.
 
-Further work follows
-[`flush-pattern-comparison.md`](flush-pattern-comparison.md). Linux baseline
+Further flush-pattern comparison work is tracked in-tree under
+`docs/flush-pattern-comparison.md` when that note is present. Linux baseline
 from the flush-reg capture: 112 `FLUSH_EXT`, 571 `FPDMA_WRITE`, 26 long
 flushes all `ci_held`, flush completion p50 18.113 ms / p95 1.133 s.
 

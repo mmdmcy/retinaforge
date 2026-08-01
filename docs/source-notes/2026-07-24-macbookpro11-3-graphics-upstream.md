@@ -81,10 +81,18 @@ device open.
 
 On pre-T2 Retina generations, the internal eDP panel is muxed but the newer
 Thunderbolt/DisplayPort main links cannot be fully switched to Intel. Upstream
-documents that these external outputs can only be driven by the discrete GPU.
+documents that those **native GPU display links** can only be driven by the
+discrete GPU.
 
-An Intel-only, dGPU-off daily mode therefore sacrifices external-display
-output. A complete configuration needs an explicit NVIDIA-on mode:
+**Supersession (2026-08-01):** USB DisplayLink outputs are a separate path.
+Lab work drove dual 1080p DisplayLink panels with the GT 750M left off; that
+does not validate native DP/HDMI through the dGPU. See
+[`2026-08-01-intel-panel-and-display-path.md`](2026-08-01-intel-panel-and-display-path.md).
+
+An Intel-only, dGPU-off mode therefore sacrifices **native** external-display
+output unless an alternate transport (for example DisplayLink) is accepted.
+A complete native-connector configuration still needs an explicit NVIDIA-on
+mode:
 
 - safest first implementation: a separate boot entry preselected for NVIDIA;
 - later possibility: keep the panel on Intel and wake the NVIDIA GPU for the
