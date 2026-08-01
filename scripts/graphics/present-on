@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# present-on — start DisplayLink for occasional external monitors (MacBookPro11,3 lab)
+# Requires: displaylink package + evdi; X11 session with DISPLAY set.
+# Does NOT enable the NVIDIA dGPU. See docs/graphics/intel-first-repro.md
+set -euo pipefail
+MODE="${1:-extend}"
+export DISPLAY="${DISPLAY:-:0}"
+if [[ -z "${XAUTHORITY:-}" ]]; then
+  for a in /tmp/xauth_* /run/user/"${UID:-1000}"/xauth_* "$HOME/.Xauthority"; do
+    [[ -e "$a" ]] && export XAUTHORITY="$a" && break
+  done
+fi
+
+sudo systemctl unmask displaylink.service 2>/dev/null || true
+sudo systemctl start displaylink.service
+
+found=0
+for _ in $(seq 1 25); do
+  mapfile -t outs < <(xrandr 2>/dev/null | awk '/DVI-.* connected/{print $1}')
+  if ((${#outs[@]} > 0)); then
+    found=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$found" -ne 1 ]]; then
+  echo "DisplayLink started but no DVI outputs yet — check cables, then: present-layout"
+  xrandr --query 2>/dev/null | awk '/connected/' || true
+  exit 2
+fi
+
+# Keep discrete NVIDIA off when possible
+if [[ -w /sys/kernel/debug/vgaswitcheroo/switch ]] || sudo test -w /sys/kernel/debug/vgaswitcheroo/switch 2>/dev/null; then
+  echo OFF | sudo tee /sys/kernel/debug/vgaswitcheroo/switch >/dev/null || true
+fi
+
+"$(dirname "$0")/present-layout" "$MODE"
+echo "Present ON (${MODE}): ${outs[*]}"

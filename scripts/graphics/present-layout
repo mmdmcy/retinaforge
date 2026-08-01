@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# present-layout — arrange DisplayLink outputs (extend|mirror)
+set -euo pipefail
+export DISPLAY="${DISPLAY:-:0}"
+if [[ -z "${XAUTHORITY:-}" ]]; then
+  for a in /tmp/xauth_* /run/user/"${UID:-1000}"/xauth_* "$HOME/.Xauthority"; do
+    [[ -e "$a" ]] && export XAUTHORITY="$a" && break
+  done
+fi
+
+MODE="${1:-extend}"
+xrandr --output eDP-1 --primary --auto
+mapfile -t outs < <(xrandr | awk '/DVI-.* connected/{print $1}')
+if ((${#outs[@]} == 0)); then
+  echo "No DisplayLink DVI outputs. Is displaylink running? (present-on)"
+  xrandr --query | awk '/connected/'
+  exit 1
+fi
+
+prev=eDP-1
+if [[ "$MODE" == "mirror" ]]; then
+  for o in "${outs[@]}"; do
+    xrandr --output "$o" --mode 1920x1080 --same-as eDP-1
+  done
+  echo "Mirror → ${outs[*]}"
+else
+  for o in "${outs[@]}"; do
+    xrandr --output "$o" --mode 1920x1080 --right-of "$prev"
+    prev="$o"
+  done
+  echo "Extend → laptop | ${outs[*]}"
+fi
+xrandr --query | awk '/ connected|Screen/'

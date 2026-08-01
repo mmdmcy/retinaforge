@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# present-off — stop DisplayLink and return to laptop panel only
+set -euo pipefail
+export DISPLAY="${DISPLAY:-:0}"
+if [[ -z "${XAUTHORITY:-}" ]]; then
+  for a in /tmp/xauth_* /run/user/"${UID:-1000}"/xauth_* "$HOME/.Xauthority"; do
+    [[ -e "$a" ]] && export XAUTHORITY="$a" && break
+  done
+fi
+
+if command -v xrandr >/dev/null; then
+  xrandr --output eDP-1 --primary --auto 2>/dev/null || true
+  while read -r o; do
+    [[ -n "$o" ]] || continue
+    xrandr --output "$o" --off 2>/dev/null || true
+  done < <(xrandr 2>/dev/null | awk '/DVI-.* connected/{print $1}')
+fi
+
+sudo systemctl stop displaylink.service 2>/dev/null || true
+sudo systemctl mask displaylink.service 2>/dev/null || true
+echo OFF | sudo tee /sys/kernel/debug/vgaswitcheroo/switch >/dev/null 2>&1 || true
+echo "Present OFF — laptop panel only, DisplayLink masked."

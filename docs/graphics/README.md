@@ -27,6 +27,9 @@ AHCI/libata patch series even though both tracks share the tree.
 | --- | --- |
 | [`macos/scripts/set-gpu-power-prefs-intel.sh`](../../macos/scripts/set-gpu-power-prefs-intel.sh) | macOS: set Intel `gpu-power-prefs` |
 | [`scripts/graphics/check-intel-first-panel.sh`](../../scripts/graphics/check-intel-first-panel.sh) | Linux: read-only verify Intel panel path |
+| [`scripts/graphics/present-on`](../../scripts/graphics/present-on) | Start DisplayLink + layout (occasional) |
+| [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | `extend` or `mirror` |
+| [`scripts/graphics/present-off`](../../scripts/graphics/present-off) | Stop DisplayLink; laptop only |
 
 ## Scope
 

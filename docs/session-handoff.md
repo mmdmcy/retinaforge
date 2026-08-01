@@ -1,13 +1,27 @@
 # Next Session Handoff
 
-Last updated: 2026-08-01 (Intel panel path validated; graphics note published)
+Last updated: 2026-08-01 (session wrap: Linux-first lab; repro docs ready)
 
-Private operational checklist for agents. Public science lives in
-`docs/findings.md` and `docs/source-notes/2026-08-01-intel-panel-and-display-path.md`.
+Private operational checklist for agents. Public science and reproduction:
+- `docs/graphics/intel-first-repro.md`
+- `docs/source-notes/2026-08-01-intel-panel-and-display-path.md`
+- `docs/findings.md` (graphics subsection)
+
 Do not copy hostnames, addresses, keys, or conversation text into publishable
 files.
 
-## Machine layout
+## User intent (end of 2026-08-01 session)
+
+- **Linux-first** on this `MacBookPro11,3` (lab / primary experiment machine).
+- Big Sur kept as recovery/reference, not the daily workaround path.
+- Considering leaving **CachyOS** for something stabler (**Fedora preferred**
+  over Debian stable for newer kernel / Apple Set OS comfort). Not done yet.
+- Optional later: shrink APFS, grow Linux — only with explicit user-present
+  checkpoint + backup. Not started.
+- Work laptop may be ThinkPad T560 or another Mac; this MBP is the Apple/NVIDIA
+  (+ AHCI) lab box.
+
+## Machine layout (re-inventory before changes)
 
 | Part | Role |
 | --- | --- |
@@ -16,54 +30,72 @@ files.
 | sda3 | Linux ESP / Limine `/boot` |
 | sda4 | CachyOS ext4 root |
 
-Big Sur and CachyOS both remain bootable. Re-inventory before repartitioning.
+## Graphics — restore after any Linux reinstall
 
-## Graphics (verified 2026-08-01)
+Follow **`docs/graphics/intel-first-repro.md`** end-to-end:
 
-1. macOS: `gpu-power-prefs` Intel `%01%00%00%00` (do not rely on Linux writes).
-2. Limine **default_entry** = UKI / EFI-stub **CachyOS Intel probe** (not bare
-   `protocol: linux`).
-3. Expect `i915drmfb`, eDP 2880×1800, switcheroo IGD selected.
-4. After boot, confirm DIS `OFF` via switcheroo if thermals matter; DIS may
-   return to `Pwr` across sessions.
-5. Never live-force IGD / careless mux handoff (black screen history).
+1. macOS: `macos/scripts/set-gpu-power-prefs-intel.sh` → `%01%00%00%00`
+2. Boot via **UKI / EFI-stub** entry (Limine `protocol: efi` or systemd-boot UKI).
+   Bare `protocol: linux` is insufficient for Apple Set OS on this machine.
+3. Linux: `scripts/graphics/check-intel-first-panel.sh`
+4. Optional cooler idle: `echo OFF | sudo tee /sys/kernel/debug/vgaswitcheroo/switch`
+5. Never live-force GMUX / IGD mid-session.
 
-Research write-up:
-[`source-notes/2026-08-01-intel-panel-and-display-path.md`](source-notes/2026-08-01-intel-panel-and-display-path.md).
+**NVRAM now:** Intel prefs (`%01…`) for the Linux panel path.
 
-## Linux lab desktop notes
+DisplayLink (occasional only): install `displaylink`/`evdi`, then repo helpers
+`scripts/graphics/present-{on,layout,off}`. Dual DisplayLink is hot.
 
-- Prefer **Xfce/X11** over Plasma for stability on this multi-GPU setup.
-- Set DRM device preference to the Intel card when both GPUs enumerate.
-- DisplayLink: masked/off by default; on-demand helpers
-  `present-on` / `present-layout` / `present-off` (USB dock path; dGPU not
-  required). Dual DisplayLink is hot — presenting only.
-- Lid/suspend ignore + masked sleep targets were configured for long SSH lab
-  sessions; lid-closed cooling is still poor — avoid heavy load.
+Desktop note: **Xfce/X11** was stabler than Plasma here; prefer Intel DRM node
+when both GPUs enumerate.
 
-## Hard stops (unchanged)
+## Distro note for next install
 
-- Writable MSI + NCQ: never for samples.
+| Distro | Fit |
+| --- | --- |
+| **Fedora (current)** | Good default: newer kernel, UKI/systemd-boot friendly |
+| Debian stable | OK if you add a **newer kernel** (backports) — stock stable can lag Apple quirks |
+| CachyOS (current) | Works; user prefers to migrate away for stability |
+
+Recipe is distro-agnostic; validate with `check-intel-first-panel.sh`.
+
+## In-repo vs machine-only
+
+**In repo (enough to bring graphics back up):**
+
+- `docs/graphics/intel-first-repro.md`
+- `macos/scripts/set-gpu-power-prefs-intel.sh`
+- `scripts/graphics/check-intel-first-panel.sh`
+- `scripts/graphics/present-on` / `present-layout` / `present-off`
+
+**Was configured on the live CachyOS install (recreate if wiped):**
+
+- SSH + sudo for lab user, Wi-Fi, keymap
+- Always-on / lid-ignore / masked sleep (optional)
+- SDDM/Xfce autologin, scale factors
+- DisplayLink packages masked by default
+
+## Hard stops
+
+- Writable MSI + NCQ: never.
 - No casual USB reprovision, repartition, or physical write tests without a
   fresh user-present checkpoint.
-- Do not mix storage and NVIDIA/GMUX changes in one patch or one experiment.
+- Do not mix storage and NVIDIA/GMUX changes in one patch or experiment.
 
 ## Access (private)
 
 - Same LAN host for macOS and Linux (whichever is booted).
-- macOS SSH: `known_hosts_macos_mbp` + existing ed25519 key.
-- Linux SSH: `known_hosts_cachyos` + same key family; sudo configured for
-  unattended lab commands on the Linux user.
-- Agent may reboot the Linux lab OS and reconnect when that OS is the running
-  system.
+- macOS: `known_hosts_macos_mbp` + existing ed25519 key.
+- Linux: `known_hosts_cachyos` + same key family; sudo configured for lab user.
+- Agent may reboot the Linux lab OS and reconnect when that OS is running.
 
-## Next useful experiments (pick one; do not combine)
+## Next experiments (pick one; do not combine)
 
-1. Suspend/resume with Intel panel ownership + DIS `OFF`; record failures.
-2. Native GT 750M outputs (Nouveau or documented proprietary) — separate from
-   DisplayLink.
-3. Measure whether switcheroo `OFF` equals GMUX rail-off (instrumented).
-4. Storage: only if explicitly reopened — ext4-on-dm-crypt flush isolation.
+1. Reinstall to Fedora (or Debian+new kernel); repeat intel-first-repro.
+2. Suspend/resume with Intel panel + DIS `OFF`.
+3. Native GT 750M outputs (separate from DisplayLink).
+4. Optional APFS shrink / Linux grow — only if user explicitly starts that
+   checkpoint.
 
-Default when unsure: leave APFS alone, boot Big Sur, read the 2026-08-01
-graphics note before changing NVRAM or Limine.
+Default when unsure: leave APFS alone; read `intel-first-repro.md` before
+touching NVRAM or the bootloader.
