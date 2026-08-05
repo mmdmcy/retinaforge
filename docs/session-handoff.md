@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -40,6 +40,14 @@ Writable MSI+NCQ remains forbidden.
 to restore Intel eDP ownership. Nouveau remained primary; hybrid black-panel
 recovered with GMUX backlight max + display-manager restart. Details:
 `docs/source-notes/2026-08-05-intel-panel-path-retest.md`.
+
+**2026-08-06 investigation:** upstream analysis shows the mux is decided by the
+Apple EFI firmware at power-on; the `i915` eDP link-info error is the
+ghost-panel path (mux left on discrete). Value semantics are correct;
+persistence is the open variable. Kernel-skew (CachyOS → 7.1.x), firmware/SMC
+state, or Linux destroying the variable are the ranked hypotheses. Details +
+Debian/Mint migration plan:
+`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`.
 
 Do **not** burn another session on identical NVRAM + cold UKI loops. Next
 graphics attempt must change one factor and get a user-present checkpoint.
@@ -94,14 +102,17 @@ reconnect when that OS is the running system.
 
 ## Next experiments (pick one; do not combine)
 
-1. Graphics: new single-factor attempt to restore Intel panel (not identical
-   NVRAM+UKI repeat)—e.g. known Integrated-Only macOS tool, or kernel/UKI
-   skew vs 2026-08-01—only with user checkpoint.
-2. Reinstall to a current Fedora (or Debian + newer kernel); repeat
-   `intel-first-repro.md` only after prefs/ownership strategy is clear.
-3. Suspend/resume **after** Intel panel ownership is re-proven.
-4. Native GT 750M outputs (separate from DisplayLink).
-5. Storage flush-pattern follow-up only with an explicit checkpoint.
+1. **Distro migration (recommended):** Debian trixie (6.12) or Linux Mint 22.x
+   (HWE 6.11) per the 2026-08-06 investigation note; rebuild EFI-stub/UKI
+   entry; repeat `intel-first-repro.md`; record kernel version and UKI date.
+   Doubles as the kernel-skew test vs CachyOS 7.1.x. User checkpoint.
+2. Pin the 08-01 CachyOS kernel + UKI and repeat the recipe (kernel-skew
+   isolation) — only if staying on CachyOS.
+3. macOS-provable switch cycle: pref write → reboot macOS once (verify panel
+   on iGPU) → cold off → UKI boot; re-check pref on macOS after Linux boots.
+4. Suspend/resume **after** Intel panel ownership is re-proven.
+5. Native GT 750M outputs (separate from DisplayLink).
+6. Storage flush-pattern follow-up only with an explicit checkpoint.
 
-Default when unsure: leave APFS alone; read the 2026-08-05 retest note before
-changing NVRAM or the bootloader.
+Default when unsure: leave APFS alone; read the 2026-08-06 investigation note
+before changing NVRAM or the bootloader.

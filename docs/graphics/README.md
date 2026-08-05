@@ -12,6 +12,8 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](../source-notes/2026-08-01-intel-panel-and-display-path.md)
 - **Failed same-recipe retest (2026-08-05):**
   [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md)
+- **Investigation + Debian/Mint migration plan (2026-08-06):**
+  [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](../source-notes/2026-08-06-intel-panel-investigation-and-migration.md)
 - Upstream graphics review:
   [`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](../source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md)
 - Windows Intel enumeration probe:

@@ -419,6 +419,22 @@ without live GMUX forcing. Treat 2026-08-01 as the last proven success until
 Details:
 [`source-notes/2026-08-05-intel-panel-path-retest.md`](source-notes/2026-08-05-intel-panel-path-retest.md).
 
+### Investigation and distro-migration plan (2026-08-06)
+
+Upstream analysis confirms the panel mux is decided by the Apple EFI
+firmware at power-on from `gpu-power-prefs`; the `i915` "failed to retrieve
+link info" error is the ghost-panel path that occurs when the firmware left
+the mux on the discrete GPU. The lab's `%01%00%00%00` value is correct
+(identical to `0xbb/gpu-switch` for this model); persistence across OS
+round-trips is the open variable. Ranked hypotheses for the 08-01 → 08-05
+delta: CachyOS rolling-kernel skew into 7.1.x, firmware/SMC state, or Linux
+boots destroying the variable. Plan: pin-kernel test plus migration to
+Debian (trixie 6.12 / bookworm 6.1+backports) or Linux Mint 22.x
+(6.8 / HWE 6.11), which also isolates the kernel-skew hypothesis.
+
+Details:
+[`source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](source-notes/2026-08-06-intel-panel-investigation-and-migration.md).
+
 ### External displays
 
 USB **DisplayLink** dual 1080p outputs worked with the GT 750M left off.

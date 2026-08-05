@@ -217,6 +217,8 @@ fresh check-script pass.
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](docs/source-notes/2026-08-01-intel-panel-and-display-path.md)
 - Evidence (failed retest):
   [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](docs/source-notes/2026-08-05-intel-panel-path-retest.md)
+- Investigation + Debian/Mint migration plan (2026-08-06):
+  [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md)
 
 Keep graphics evidence and AHCI/libata patch series separate even though both
 tracks share this repository.
