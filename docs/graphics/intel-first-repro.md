@@ -127,6 +127,20 @@ substitute for Steps A–B.
   `gpu-power-prefs` from macOS to discrete `%00%00%00%00` for Apple-oriented
   behavior.
 - Never chase a black screen with repeated live mux experiments.
+- If the internal panel goes black but the machine is otherwise up (SSH /
+  display manager still running): raise GMUX backlight sysfs brightness and
+  restart the display manager before any mux experiments. A 2026-08-05 retest
+  hit a hybrid failure (Intel-oriented prefs attempt while Nouveau still owned
+  the fb) that recovered this way; see
+  [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md).
+
+## Negative retest (2026-08-05)
+
+The 2026-08-01 success was **not** reproduced by repeating Steps A–B alone
+(including cold power-off and an integrated-only `pmset` lock on macOS).
+`check-intel-first-panel.sh` failed with `nouveaudrmfb` and `i915` eDP
+link-info errors despite UKI Set OS enumerating the iGPU. Do not claim a
+working Intel desktop from prefs readback or iGPU PCI presence alone.
 
 ## Distro migration (CachyOS → Debian/Fedora/…)
 

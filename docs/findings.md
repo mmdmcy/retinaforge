@@ -405,6 +405,20 @@ caused black screens and is rejected as an operator procedure.
 Full methods, negatives, and DisplayLink results:
 [`source-notes/2026-08-01-intel-panel-and-display-path.md`](source-notes/2026-08-01-intel-panel-and-display-path.md).
 
+### Failed same-recipe retest (2026-08-05)
+
+Repeating macOS Intel `gpu-power-prefs` (`%01%00%00%00`, verified readback)
+plus UKI / EFI-stub boot **did not** restore `i915drmfb` on this date. Apple
+Set OS still enumerated Iris Pro, but `i915` disabled eDP after link-info
+failure and Nouveau remained the primary framebuffer. Prefs often read back
+as discrete (`%00%00%00%00`) on later macOS visits. A hybrid black-panel
+failure mode recovered via GMUX backlight max + display-manager restart
+without live GMUX forcing. Treat 2026-08-01 as the last proven success until
+`check-intel-first-panel.sh` passes again.
+
+Details:
+[`source-notes/2026-08-05-intel-panel-path-retest.md`](source-notes/2026-08-05-intel-panel-path-retest.md).
+
 ### External displays
 
 USB **DisplayLink** dual 1080p outputs worked with the GT 750M left off.

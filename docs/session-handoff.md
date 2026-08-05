@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-01
+Last updated: 2026-08-05
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -30,13 +30,29 @@ Flush-pattern / AHCI diagnostic tooling is in-tree:
 Do not reopen physical storage boots without a fresh user-present checkpoint.
 Writable MSI+NCQ remains forbidden.
 
-## Graphics — restore after any Linux reinstall
+## Graphics — current state (2026-08-05)
 
-Follow `docs/graphics/intel-first-repro.md`:
+**Last proven Intel panel success:** 2026-08-01 (`i915drmfb`). See
+`docs/graphics/intel-first-repro.md` and
+`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`.
+
+**2026-08-05 retest:** same recipe (macOS Intel `gpu-power-prefs` + UKI) failed
+to restore Intel eDP ownership. Nouveau remained primary; hybrid black-panel
+recovered with GMUX backlight max + display-manager restart. Details:
+`docs/source-notes/2026-08-05-intel-panel-path-retest.md`.
+
+Do **not** burn another session on identical NVRAM + cold UKI loops. Next
+graphics attempt must change one factor and get a user-present checkpoint.
+
+Daily usable path until re-proven: discrete/Nouveau desktop (hot). Optional:
+set macOS prefs back to discrete `%00%00%00%00` for more predictable Linux
+boots without the hybrid black-panel mode.
+
+Restore recipe after reinstall (when Intel works again):
 
 1. From macOS: `macos/scripts/set-gpu-power-prefs-intel.sh` (`%01%00%00%00`)
 2. Boot Linux via UKI / EFI-stub (not bare `protocol: linux`)
-3. On Linux: `scripts/graphics/check-intel-first-panel.sh`
+3. On Linux: `scripts/graphics/check-intel-first-panel.sh` must pass
 4. Optional: switcheroo `OFF` for the discrete client after IGD owns the panel
 5. Never live-force GMUX / IGD mid-session
 
@@ -44,7 +60,8 @@ DisplayLink helpers (occasional presenting only):
 `scripts/graphics/present-{on,layout,off}`. Sustained dual DisplayLink is hot.
 
 Desktop note from lab: light X11 (e.g. Xfce) was stabler than heavy Plasma on
-this multi-GPU setup; prefer the Intel DRM node when both GPUs enumerate.
+this multi-GPU setup; prefer the Intel DRM node when both GPUs enumerate **and**
+Intel owns the panel.
 
 ## Distro note
 
@@ -66,6 +83,8 @@ optional always-on/lid policy, display manager/autologin, toolkit scale.
 - No casual USB reprovision, repartition, or physical write tests without a
   fresh user-present checkpoint.
 - Do not mix storage and NVIDIA/GMUX changes in one patch or experiment.
+- No live GMUX / `force_igd` chasing after black panel; use recovery in
+  `intel-first-repro.md` first.
 
 ## Access
 
@@ -75,11 +94,14 @@ reconnect when that OS is the running system.
 
 ## Next experiments (pick one; do not combine)
 
-1. Reinstall to a current Fedora (or Debian + newer kernel); repeat
-   `intel-first-repro.md`.
-2. Suspend/resume with Intel panel ownership + discrete `OFF`.
-3. Native GT 750M outputs (separate from DisplayLink).
-4. Storage flush-pattern follow-up only with an explicit checkpoint.
+1. Graphics: new single-factor attempt to restore Intel panel (not identical
+   NVRAM+UKI repeat)—e.g. known Integrated-Only macOS tool, or kernel/UKI
+   skew vs 2026-08-01—only with user checkpoint.
+2. Reinstall to a current Fedora (or Debian + newer kernel); repeat
+   `intel-first-repro.md` only after prefs/ownership strategy is clear.
+3. Suspend/resume **after** Intel panel ownership is re-proven.
+4. Native GT 750M outputs (separate from DisplayLink).
+5. Storage flush-pattern follow-up only with an explicit checkpoint.
 
-Default when unsure: leave APFS alone; read `intel-first-repro.md` before
+Default when unsure: leave APFS alone; read the 2026-08-05 retest note before
 changing NVRAM or the bootloader.
