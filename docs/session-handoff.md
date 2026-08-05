@@ -105,11 +105,14 @@ reconnect when that OS is the running system.
 1. **Distro migration (recommended):** Debian trixie (6.12) or Linux Mint 22.x
    (HWE 6.11) per the 2026-08-06 investigation note; rebuild EFI-stub/UKI
    entry; repeat `intel-first-repro.md`; record kernel version and UKI date.
-   Doubles as the kernel-skew test vs CachyOS 7.1.x. User checkpoint.
-2. Pin the 08-01 CachyOS kernel + UKI and repeat the recipe (kernel-skew
-   isolation) — only if staying on CachyOS.
-3. macOS-provable switch cycle: pref write → reboot macOS once (verify panel
-   on iGPU) → cold off → UKI boot; re-check pref on macOS after Linux boots.
+   Primary goal is stability; re-ranked analysis says the failure is
+   firmware-side (switcheroo `+` is gmux-register truth set before Linux
+   boots), so migration is not expected to be the fix by itself. User checkpoint.
+2. **E2 — firmware-provable switch cycle (primary experiment):** pref write →
+   plain macOS reboot → verify pref survived → verify panel on iGPU in macOS
+   → cold power-off → UKI boot; re-check pref on macOS after Linux boots.
+3. Pin the 08-01 CachyOS kernel (recover version from pacman cache/`/boot`
+   **before erasing**) — supporting data only.
 4. Suspend/resume **after** Intel panel ownership is re-proven.
 5. Native GT 750M outputs (separate from DisplayLink).
 6. Storage flush-pattern follow-up only with an explicit checkpoint.

@@ -12,15 +12,31 @@ gmux register truth), and `i915`'s "failed to retrieve link info, disabling
 eDP" is the documented ghost-panel path when the eDP AUX/main link is muxed
 to the other GPU. The lab's `%01%00%00%00` value is correct (identical to the
 canonical `gpu-switch` value for this exact model); persistence across
-OS round-trips is the open variable. Ranked hypotheses for the 08-01 → 08-05
-delta: (1) CachyOS rolling-kernel skew into the 7.1.x era, (2) firmware/SMC
-state (the hybrid black-panel mode points at firmware-internal
-inconsistency), (3) Linux boot stubbing/destroying the variable so later
-attempts start from discrete. Because CachyOS proved too unstable for daily
-use, this note also plans migration to **Debian (trixie/backports) or Linux
-Mint (22.x)** — which is also the cleanest way to test the kernel-skew
-hypothesis, since 6.1/6.8/6.11/6.12 kernels all predate the suspect 7.1.x
-line. The Intel-first recipe itself is distro-agnostic.
+OS round-trips is the open variable.
+
+**Hypotheses re-ranked on re-examination (2026-08-06, post-release):** the
+retest's own evidence largely **refutes** the kernel-skew hypothesis — the
+switcheroo `+` marker is gmux-register truth set by firmware at power-on,
+and nothing in `apple-gmux` writes the switch state during boot (verified:
+`gmux_switchto` is only reachable via explicit switcheroo commands), so no
+kernel version could have changed the mux position. The failure is therefore
+firmware-side with near-certainty; ranked causes: (1) the firmware did not
+apply/consume the pref at the 08-05 power-ons (variable loss between the
+macOS write and the next power-on, or macOS rewriting it), (2) firmware/SMC
+state-machine behavior (the hybrid black-panel mode — Intel-oriented
+framebuffer allocated while the panel stayed on DIS — hints at a
+firmware-internal inconsistency), (3) Linux boot destroying the variable so
+later attempts start from discrete. The distro migration below is a
+stability fix and a clean single-factor change, **not** expected to be the
+fix by itself. Because CachyOS proved too unstable for daily use, migration
+to **Debian (trixie/backports) or Linux Mint (22.x)** is planned regardless;
+6.1/6.8/6.11/6.12 kernels also predate the suspect 7.1.x line, so the
+migration still answers the kernel question as a side effect. The Intel-first
+recipe itself is distro-agnostic.
+
+Note: the 2026-08-01 success note does **not** record the kernel version or
+UKI build date — a data gap that keeps the kernel-skew question open in the
+repo; recover this from CachyOS logs before erasing it.
 
 ## Context
 
@@ -115,42 +131,58 @@ the mux on DIS at power-on". The failure is upstream of the kernel.
 3. **Only the Linux-side switcheroo `+` is evidence.** macOS readback,
    `system_profiler` active-GPU, and `pmset` locks are session-level facts,
    not next-boot mux policy.
-4. **Two plausible worlds remain:** (a) kernel-skew regression — CachyOS
-   moved to 7.1.x between 08-01 and 08-05, and `i915` DP/eDP code churns
-   heavily (~170 commits in `intel_dp.c` since 2025-01); (b) machine-state
-   change — firmware/SMC/NVRAM behavior drifted (the hybrid black-panel
-   mode, where the firmware allocated an Intel-oriented framebuffer while
-   the panel stayed on DIS, hints at firmware-internal inconsistency).
+4. **The failure is firmware-side with near-certainty; kernel skew is
+   largely refuted.** The switcheroo `+` is gmux-register truth written by
+   the EFI firmware at power-on; `apple-gmux` never writes the switch state
+   during boot (`gmux_switchto` is reachable only through explicit
+   vga_switcheroo switch commands), so no kernel version can change the mux
+   position. The remaining questions are *why* the firmware left the mux on
+   DIS despite a verified Intel pref: (a) the pref was lost or rewritten
+   between the macOS write and the next power-on, (b) firmware/SMC
+   state-machine behavior (the hybrid black-panel mode, where the firmware
+   allocated an Intel-oriented framebuffer while the panel stayed on DIS,
+   hints at firmware-internal inconsistency), (c) a Linux boot destroyed the
+   variable for subsequent power-ons. `i915` DP/eDP code churn (~170 commits
+   in `intel_dp.c` since 2025-01) is a red herring for this symptom; it
+   remains relevant only after the mux is provably on the IGD side again.
 
 ## Solution path (single-factor experiments; user-present checkpoints only)
 
-### E1 — Pin the 08-01 kernel (cheapest discriminator)
+### E1 — Pin the 08-01 kernel (supporting data, not a primary lever)
 
-Record the 08-01 kernel version (pacman cache / `/boot` / CachyOS logs if
-still present), pin that kernel + UKI, repeat the recipe. Intel ownership
-returns → regression is in the 7.1.x kernel line (bisect + upstream report).
-Still fails → machine state changed, not the kernel.
+The 2026-08-01 note did not record the kernel version or UKI build date;
+recover them from CachyOS pacman cache / `/boot` / journal logs **before
+erasing CachyOS**. Pinning that kernel + UKI and repeating the recipe
+isolates the question only if the mux lands on IGD first — expected to be
+negative, which would confirm the firmware-side conclusion.
 
-### E2 — Make the firmware switch provable before touching Linux
+### E2 — Make the firmware switch provable before touching Linux (primary)
 
-1. macOS: write Intel pref (`set-gpu-power-prefs-intel.sh`), verify readback.
-2. **Reboot into macOS once**, confirm the *panel* is genuinely on the iGPU
-   (the firmware switch is visible in macOS, and macOS stops rewriting the
-   pref to discrete once its policy is integrated).
-3. Cold power-off, then boot the Linux UKI.
-4. After every Linux boot, re-check the variable on macOS. If gone/stubbed,
+1. macOS: write Intel pref (`set-gpu-power-prefs-intel.sh`), verify readback
+   (`nvram -p` and `nvram -x` for exact bytes).
+2. **Plain macOS reboot (no Linux), then read the pref again.** If it
+   survives, macOS is not rewriting it and the variable persists in the
+   firmware store. If it flips to discrete, macOS policy (AGS / `gpuswitch`)
+   is the rewritter — fix that setting first.
+3. Re-write the pref if needed, then **reboot into macOS once** and confirm
+   the *panel* is genuinely on the iGPU in `system_profiler` (the firmware
+   switch is visible in macOS, and macOS stops rewriting the pref to discrete
+   once its policy is integrated).
+4. Cold power-off (not soft reboot), then boot the Linux UKI.
+5. After every Linux boot, re-check the variable on macOS. If gone/stubbed,
    that Linux boot destroyed it → every subsequent attempt started from
    discrete; log this.
 
-### E3 — SMC reset (only if E1 and E2 fail)
+### E3 — SMC reset (only if E2 cannot be satisfied)
 
 User-present, documented hard stop on casual resets; clears NVRAM, so
 re-do the macOS write cycle afterward.
 
-### E4 — Distro migration (doubles as the kernel-skew test)
+### E4 — Distro migration (stability fix + single-factor change)
 
-See below. If E1 pinned a 6.x-era kernel and it worked, E4 should target a
-kernel of the same era.
+See below. Not expected to be the fix by itself; it answers the kernel
+question only as a side effect and is primarily justified operationally
+(CachyOS instability).
 
 ## Debian / Linux Mint migration plan
 
@@ -161,8 +193,8 @@ kernel of the same era.
   daily use.
 - A stable distro pins the kernel variable. Debian bookworm (6.1 LTS),
   Debian trixie (6.12), Linux Mint 22.x (Ubuntu 24.04 base; 6.8, HWE 6.11)
-  all predate the 7.1.x era suspected in the retest — i.e. the migration
-  *is* experiment E1 against the kernel-skew hypothesis.
+  all predate the 7.1.x era — a side-effect check on the (now largely
+  refuted) kernel-skew hypothesis, not the primary motivation.
 - The Intel-first recipe is distro-agnostic (`docs/graphics/intel-first-repro.md`).
 
 ### Requirements
@@ -225,10 +257,12 @@ note, and cross-reference the 08-01 kernel version (E1) before choosing.
 
 ## Non-goals / not claimed
 
-- No claim that the 2026-08-01 success was mistaken or that 7.1.x is proven
-  to be the regression — kernel skew is a ranked hypothesis, not a finding.
-- No root-cause isolation between firmware, SMC, NVRAM consumers, and kernel
-  version (requires the experiments above).
+- No claim that the 2026-08-01 success was mistaken, and no claim that a
+  distro migration restores Intel ownership by itself — the failure is
+  firmware-side with near-certainty, and the firmware is only reachable
+  through the macOS write + power-on sequence (E2).
+- No root-cause isolation between firmware, SMC, and NVRAM consumers
+  (requires the E2 diagnostics above).
 - No endorsement of Linux efivarfs writes for this variable (reconfirmed
   stub behavior; macOS stays the writer).
 - No `force_igd` hunting on mainline (does not exist there).
@@ -239,24 +273,29 @@ note, and cross-reference the 08-01 kernel version (E1) before choosing.
 1. Do **not** repeat identical NVRAM + UKI loops on CachyOS: both the retest
    and this analysis say the lever is firmware-side, and CachyOS's rolling
    kernel churn confounds the measurement.
-2. Prefer E4 (migration) over E1-only if daily use must be stable: the
-   migration answers the same question with a usable OS at the end.
-3. Only the Linux switcheroo `+` state after a UKI boot counts as evidence
+2. E2 is the primary experiment: it turns the opaque firmware step into
+   verifiable facts (pref survival across a plain macOS reboot; panel on iGPU
+   in macOS before cold power-off; pref state after a Linux boot).
+3. Prefer E4 (migration) for daily-use stability; treat it as a clean
+   single-factor change, not as the expected fix.
+4. Only the Linux switcheroo `+` state after a UKI boot counts as evidence
    of Intel panel ownership; macOS-side verification alone is insufficient.
-4. Keep the black-panel recovery playbook (backlight max + display-manager
+5. Keep the black-panel recovery playbook (backlight max + display-manager
    restart; never live GMUX force) for the hybrid failure mode during any of
    the experiments.
 
 ## Reproducibility checklist (for the migration pass)
 
-- [ ] 08-01 CachyOS kernel version recorded (for kernel-skew comparison)
+- [ ] 08-01 CachyOS kernel version recovered from pacman cache/`/boot`/logs **before erasing** (data gap in the 2026-08-01 note)
+- [ ] E2 first: pref survives a plain macOS reboot (else fix AGS/`gpuswitch` policy first)
 - [ ] macOS readback of Intel `gpu-power-prefs` immediately before power-off
+- [ ] macOS session on iGPU confirmed in `system_profiler` before cold power-off
 - [ ] Distro + kernel version and UKI build date recorded
 - [ ] UKI/EFI-stub entry confirmed (`protocol: efi` / chainloader / systemd-boot)
 - [ ] `i915` + `apple-gmux` present in initramfs
 - [ ] fb name, eDP status, switcheroo dump, package temp recorded
 - [ ] `check-intel-first-panel.sh` passes before claiming success
-- [ ] Pref re-checked on next macOS boot (persistence)
+- [ ] Pref re-checked on next macOS boot (persistence; log if Linux stubbed it)
 - [ ] Preserve APFS; no MSI+NCQ writable trials; no other experiments combined
 
 ## References (in-repo and upstream)
