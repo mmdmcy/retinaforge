@@ -206,13 +206,17 @@ physical run remain separate user-present checkpoints.
 
 Intel-first internal panel ownership was verified on this `MacBookPro11,3`
 (2026-08-01): macOS-written Intel `gpu-power-prefs` plus an EFI-stub/UKI boot
-so `apple_set_os()` runs, then `i915` owns eDP 2880×1800. Reproduction guide
-and helper scripts:
+so `apple_set_os()` runs, then `i915` owns eDP 2880×1800. A 2026-08-05
+same-recipe retest did **not** restore Intel eDP ownership (Nouveau remained
+primary); see the negative note before assuming the path still works without a
+fresh check-script pass.
 
 - [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md)
 - [`docs/graphics/README.md`](docs/graphics/README.md)
-- Evidence:
+- Evidence (success):
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](docs/source-notes/2026-08-01-intel-panel-and-display-path.md)
+- Evidence (failed retest):
+  [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](docs/source-notes/2026-08-05-intel-panel-path-retest.md)
 
 Keep graphics evidence and AHCI/libata patch series separate even though both
 tracks share this repository.
