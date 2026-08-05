@@ -108,9 +108,11 @@ reconnect when that OS is the running system.
    Primary goal is stability; re-ranked analysis says the failure is
    firmware-side (switcheroo `+` is gmux-register truth set before Linux
    boots), so migration is not expected to be the fix by itself. User checkpoint.
-2. **E2 — firmware-provable switch cycle (primary experiment):** pref write →
-   plain macOS reboot → verify pref survived → verify panel on iGPU in macOS
-   → cold power-off → UKI boot; re-check pref on macOS after Linux boots.
+2. **E2 — clean-slate retry of the 08-01 recipe (primary fix):** one
+   deliberate SMC reset → macOS pref write + verify → plain macOS reboot →
+   pref survival check (else fix AGS/`gpuswitch`) → panel on iGPU in macOS →
+   immediate cold power-off → UKI boot. Control test if it fails: cold off
+   and boot macOS again, log which GPU it returns on.
 3. Pin the 08-01 CachyOS kernel (recover version from pacman cache/`/boot`
    **before erasing**) — supporting data only.
 4. Suspend/resume **after** Intel panel ownership is re-proven.

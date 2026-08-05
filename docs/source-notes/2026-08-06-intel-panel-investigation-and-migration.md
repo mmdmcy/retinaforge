@@ -26,7 +26,12 @@ macOS write and the next power-on, or macOS rewriting it), (2) firmware/SMC
 state-machine behavior (the hybrid black-panel mode — Intel-oriented
 framebuffer allocated while the panel stayed on DIS — hints at a
 firmware-internal inconsistency), (3) Linux boot destroying the variable so
-later attempts start from discrete. The distro migration below is a
+later attempts start from discrete. The 08-01 recipe is still valid — the
+retest's own session 5 proves the firmware can still honor the pref (panel
+on iGPU in macOS) — so the primary fix attempt is a **clean-slate retry**
+(E2): one deliberate SMC reset, then the strict 08-01 sequence with the
+pref-survival and macOS-control checks added; the 08-05 runs are treated as
+contaminated after the first failure. The distro migration below is a
 stability fix and a clean single-factor change, **not** expected to be the
 fix by itself. Because CachyOS proved too unstable for daily use, migration
 to **Debian (trixie/backports) or Linux Mint (22.x)** is planned regardless;
@@ -145,8 +150,52 @@ the mux on DIS at power-on". The failure is upstream of the kernel.
    variable for subsequent power-ons. `i915` DP/eDP code churn (~170 commits
    in `intel_dp.c` since 2025-01) is a red herring for this symptom; it
    remains relevant only after the mux is provably on the IGD side again.
+5. **The firmware can still honor the pref — there is a fix.** The retest's
+   own session 5 proves the power-on sequence switched the panel to IGD in
+   macOS (Intel as active panel owner in `system_profiler`) with the same
+   pref value. The 08-01 recipe is therefore still valid; what broke is one
+   of its inputs. Leading suspect: **contamination** — the first failed
+   08-05 boot (or a Linux boot stubbing/destroying the variable) poisoned
+   every later attempt, so all subsequent power-ons started from a dirty
+   state. A clean-slate reset plus the strict 08-01 sequence is the primary
+   fix attempt (E2 below), not a last resort.
 
 ## Solution path (single-factor experiments; user-present checkpoints only)
+
+### E2 — Clean-slate retry of the exact 08-01 recipe (primary fix attempt)
+
+The 08-05 attempts deviated from the 08-01 sequence (extra macOS sessions
+between write and boot, `pmset` forcing) and, after the first failure, ran
+from a contaminated state. Restore the known-good state first, then mirror
+the 08-01 boot order exactly:
+
+0. **SMC reset first** (the "un-stick" step, not a last resort): clears
+   NVRAM and resets the mux state machine to its default. User-present,
+   documented hard stop on casual resets — this is a deliberate one-time
+   reset before the fix attempt.
+1. Fresh macOS session (no Linux in between): write Intel pref
+   (`set-gpu-power-prefs-intel.sh`), verify readback (`nvram -p` and
+   `nvram -x` for exact bytes).
+2. **Plain macOS reboot (no Linux), then read the pref again.** If it
+   survives, macOS is not rewriting it and the variable persists in the
+   firmware store. If it flips to discrete, macOS policy (AGS / `gpuswitch`)
+   is the rewritter — fix that setting first, then repeat step 1.
+3. Confirm the *panel* is genuinely on the iGPU in `system_profiler`
+   (proves the power-on sequence honored the pref).
+4. **Immediately cold power-off** (not soft reboot), then boot the Linux
+   UKI — no extra macOS sessions, no `pmset` fiddling, matching the 08-01
+   boot order byte-for-byte.
+5. On Linux: `check-intel-first-panel.sh` must pass; record fb name, eDP
+   status, switcheroo dump.
+6. After every Linux boot, re-check the variable on macOS. If gone/stubbed,
+   that Linux boot destroyed it → every subsequent attempt started from
+   discrete; log this.
+
+**Control test (if E2 still fails):** after a macOS-on-iGPU session with a
+verified pref, cold power-off and boot **macOS again** (not Linux). If
+macOS itself comes back on DIS, the firmware flipped on its own — conclusive
+that Linux played no part, and the SMC/EFI state machine is the remaining
+target (repeat step 0 before judging a second time).
 
 ### E1 — Pin the 08-01 kernel (supporting data, not a primary lever)
 
@@ -155,23 +204,6 @@ recover them from CachyOS pacman cache / `/boot` / journal logs **before
 erasing CachyOS**. Pinning that kernel + UKI and repeating the recipe
 isolates the question only if the mux lands on IGD first — expected to be
 negative, which would confirm the firmware-side conclusion.
-
-### E2 — Make the firmware switch provable before touching Linux (primary)
-
-1. macOS: write Intel pref (`set-gpu-power-prefs-intel.sh`), verify readback
-   (`nvram -p` and `nvram -x` for exact bytes).
-2. **Plain macOS reboot (no Linux), then read the pref again.** If it
-   survives, macOS is not rewriting it and the variable persists in the
-   firmware store. If it flips to discrete, macOS policy (AGS / `gpuswitch`)
-   is the rewritter — fix that setting first.
-3. Re-write the pref if needed, then **reboot into macOS once** and confirm
-   the *panel* is genuinely on the iGPU in `system_profiler` (the firmware
-   switch is visible in macOS, and macOS stops rewriting the pref to discrete
-   once its policy is integrated).
-4. Cold power-off (not soft reboot), then boot the Linux UKI.
-5. After every Linux boot, re-check the variable on macOS. If gone/stubbed,
-   that Linux boot destroyed it → every subsequent attempt started from
-   discrete; log this.
 
 ### E3 — SMC reset (only if E2 cannot be satisfied)
 
@@ -261,6 +293,10 @@ note, and cross-reference the 08-01 kernel version (E1) before choosing.
   distro migration restores Intel ownership by itself — the failure is
   firmware-side with near-certainty, and the firmware is only reachable
   through the macOS write + power-on sequence (E2).
+- No claim that the firmware is "broken": session 5 of the retest shows the
+  power-on sequence can still honor the pref; the open question is which
+  recipe input changed, with contamination after the first failed boot as
+  the leading suspect.
 - No root-cause isolation between firmware, SMC, and NVRAM consumers
   (requires the E2 diagnostics above).
 - No endorsement of Linux efivarfs writes for this variable (reconfirmed
@@ -273,24 +309,30 @@ note, and cross-reference the 08-01 kernel version (E1) before choosing.
 1. Do **not** repeat identical NVRAM + UKI loops on CachyOS: both the retest
    and this analysis say the lever is firmware-side, and CachyOS's rolling
    kernel churn confounds the measurement.
-2. E2 is the primary experiment: it turns the opaque firmware step into
-   verifiable facts (pref survival across a plain macOS reboot; panel on iGPU
-   in macOS before cold power-off; pref state after a Linux boot).
-3. Prefer E4 (migration) for daily-use stability; treat it as a clean
+2. E2 is the primary fix attempt: one deliberate SMC reset to a clean slate,
+   then the strict 08-01 sequence (write → verify → plain macOS reboot →
+   pref survival check → iGPU session → immediate cold power-off → UKI).
+   It turns the opaque firmware step into verifiable facts.
+3. After the first failed attempt, every later power-on ran from a
+   contaminated state; treat 08-05 as invalid for judging the recipe itself.
+4. Prefer E4 (migration) for daily-use stability; treat it as a clean
    single-factor change, not as the expected fix.
-4. Only the Linux switcheroo `+` state after a UKI boot counts as evidence
+5. Only the Linux switcheroo `+` state after a UKI boot counts as evidence
    of Intel panel ownership; macOS-side verification alone is insufficient.
-5. Keep the black-panel recovery playbook (backlight max + display-manager
+6. Keep the black-panel recovery playbook (backlight max + display-manager
    restart; never live GMUX force) for the hybrid failure mode during any of
    the experiments.
 
-## Reproducibility checklist (for the migration pass)
+## Reproducibility checklist (for the E2 fix attempt and migration pass)
 
 - [ ] 08-01 CachyOS kernel version recovered from pacman cache/`/boot`/logs **before erasing** (data gap in the 2026-08-01 note)
-- [ ] E2 first: pref survives a plain macOS reboot (else fix AGS/`gpuswitch` policy first)
+- [ ] **E2 step 0:** one deliberate SMC reset (user-present) to a clean slate
+- [ ] E2 step 2: pref survives a plain macOS reboot (else fix AGS/`gpuswitch` policy first)
 - [ ] macOS readback of Intel `gpu-power-prefs` immediately before power-off
 - [ ] macOS session on iGPU confirmed in `system_profiler` before cold power-off
-- [ ] Distro + kernel version and UKI build date recorded
+- [ ] Cold power-off then UKI boot — no intervening macOS sessions, no `pmset` fiddling
+- [ ] Control test if E2 fails: macOS-on-iGPU session → cold power-off → boot macOS again; log which GPU macOS comes back on
+- [ ] Distro + kernel version and UKI build date recorded (migration pass)
 - [ ] UKI/EFI-stub entry confirmed (`protocol: efi` / chainloader / systemd-boot)
 - [ ] `i915` + `apple-gmux` present in initramfs
 - [ ] fb name, eDP status, switcheroo dump, package temp recorded
