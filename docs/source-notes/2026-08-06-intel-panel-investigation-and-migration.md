@@ -39,9 +39,16 @@ to **Debian (trixie/backports) or Linux Mint (22.x)** is planned regardless;
 migration still answers the kernel question as a side effect. The Intel-first
 recipe itself is distro-agnostic.
 
-Note: the 2026-08-01 success note does **not** record the kernel version or
-UKI build date — a data gap that keeps the kernel-skew question open in the
-repo; recover this from CachyOS logs before erasing it.
+Note: the 2026-08-01 success note did **not** record the kernel version or
+UKI build date — a data gap that kept the kernel-skew question open in the
+repo. **Resolved 2026-08-07 (E1):** the UKI `cachyos-apple-set-os.efi` on
+the CachyOS ESP was built 2026-08-01 12:27 CEST and embeds kernel
+`7.1.5-1-cachyos` (built 2026-07-27); its mtime was unchanged through the
+08-05 retest, and the 08-01 success session journal (`-11`) prints the same
+`7.1.5-1-cachyos` in its last kernel trace. The kernel binary was therefore
+**identical** across the 08-01 success and the 08-05 failure, fully closing
+the kernel-skew hypothesis; the failure is firmware-side, as concluded
+above.
 
 ## Context
 
@@ -199,11 +206,14 @@ target (repeat step 0 before judging a second time).
 
 ### E1 — Pin the 08-01 kernel (supporting data, not a primary lever)
 
-The 2026-08-01 note did not record the kernel version or UKI build date;
-recover them from CachyOS pacman cache / `/boot` / journal logs **before
-erasing CachyOS**. Pinning that kernel + UKI and repeating the recipe
-isolates the question only if the mux lands on IGD first — expected to be
-negative, which would confirm the firmware-side conclusion.
+**DONE 2026-08-07.** The 08-01 note did not record the kernel version or
+UKI build date; recovered from the CachyOS ESP (`/boot/EFI/Linux/`, limine
+config backups) and journal before any erase: UKI built 2026-08-01 12:27,
+embedded kernel `7.1.5-1-cachyos`; the same UKI was used for the 08-05
+retest, so kernel identity is ruled out as the success/failure variable.
+Pinning that kernel + UKI and repeating the recipe would now be redundant;
+skip it. (Secondary observation: the 08-01 success session journal ends at
+17:22 with a shutdown-time Xorg warning trace on the same kernel, no crash.)
 
 ### E3 — SMC reset (only if E2 cannot be satisfied)
 
@@ -325,7 +335,7 @@ note, and cross-reference the 08-01 kernel version (E1) before choosing.
 
 ## Reproducibility checklist (for the E2 fix attempt and migration pass)
 
-- [ ] 08-01 CachyOS kernel version recovered from pacman cache/`/boot`/logs **before erasing** (data gap in the 2026-08-01 note)
+- [x] 08-01 CachyOS kernel version recovered (UKI `cachyos-apple-set-os.efi` built 2026-08-01 12:27, kernel `7.1.5-1-cachyos`; same UKI on 08-05) — E1 complete, 2026-08-07
 - [ ] **E2 step 0:** one deliberate SMC reset (user-present) to a clean slate
 - [ ] E2 step 2: pref survives a plain macOS reboot (else fix AGS/`gpuswitch` policy first)
 - [ ] macOS readback of Intel `gpu-power-prefs` immediately before power-off

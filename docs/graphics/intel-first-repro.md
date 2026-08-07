@@ -129,10 +129,15 @@ substitute for Steps A–B.
 - Never chase a black screen with repeated live mux experiments.
 - If the internal panel goes black but the machine is otherwise up (SSH /
   display manager still running): raise GMUX backlight sysfs brightness and
-  restart the display manager before any mux experiments. A 2026-08-05 retest
-  hit a hybrid failure (Intel-oriented prefs attempt while Nouveau still owned
-  the fb) that recovered this way; see
-  [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md).
+  restart the display manager before any mux experiments. If still black,
+  force a re-modest of the panel connector (`xrandr --output eDP-1 --off`
+  then `--auto` on the DIS-side X display); a 2026-08-07 recovery of the
+  hybrid black-panel mode needed backlight max + sddm restart + that
+  re-modest to bring the screen back. A 2026-08-05 retest hit a hybrid
+  failure (Intel-oriented prefs attempt while Nouveau still owned the fb)
+  that recovered via backlight + DM restart; see
+  [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md)
+  and [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](../source-notes/2026-08-06-intel-panel-investigation-and-migration.md).
 
 ## Negative retest (2026-08-05)
 

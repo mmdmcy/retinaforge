@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -48,6 +48,15 @@ persistence is the open variable. Kernel-skew (CachyOS → 7.1.x), firmware/SMC
 state, or Linux destroying the variable are the ranked hypotheses. Details +
 Debian/Mint migration plan:
 `docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`.
+
+**2026-08-07 (E1 done):** the UKI `cachyos-apple-set-os.efi` was built
+2026-08-01 12:27 and embeds kernel `7.1.5-1-cachyos`; the same UKI booted
+both the 08-01 success and the 08-05 failure, so the kernel binary was
+identical across both — kernel-skew hypothesis fully closed, failure is
+firmware-side. Same-session observation: hybrid black-panel recovery needed
+backlight max + sddm restart **plus** `xrandr --output eDP-1 --off/--auto`
+re-modest (updated in `intel-first-repro.md`). Mux still `DIS:+`; desktop
+usable on Nouveau until E2 is run.
 
 Do **not** burn another session on identical NVRAM + cold UKI loops. Next
 graphics attempt must change one factor and get a user-present checkpoint.
@@ -113,8 +122,8 @@ reconnect when that OS is the running system.
    pref survival check (else fix AGS/`gpuswitch`) → panel on iGPU in macOS →
    immediate cold power-off → UKI boot. Control test if it fails: cold off
    and boot macOS again, log which GPU it returns on.
-3. Pin the 08-01 CachyOS kernel (recover version from pacman cache/`/boot`
-   **before erasing**) — supporting data only.
+3. ~~Pin the 08-01 CachyOS kernel~~ — **DONE 2026-08-07**: UKI built
+   2026-08-01 12:27, kernel `7.1.5-1-cachyos`, identical on success/failure.
 4. Suspend/resume **after** Intel panel ownership is re-proven.
 5. Native GT 750M outputs (separate from DisplayLink).
 6. Storage flush-pattern follow-up only with an explicit checkpoint.
