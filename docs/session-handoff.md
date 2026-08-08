@@ -65,13 +65,17 @@ discriminates by boot target. Full record:
 
 Do **not** burn another session on identical NVRAM + cold UKI loops. Next
 graphics attempt must change one factor and get a user-present checkpoint.
-**Current open test (2026-08-08):** "macOS session ends on DIS → cold off →
-UKI boot" — see `docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`.
-One power cycle, single factor; `gpuswitch 2` is set in macOS and must be
-verified on the next macOS boot. Also recorded: Limine config was identical
-across the 08-01 success and 08-05 retest (boot path ruled out), and the LTS
-bare entry + proprietary nvidia driver is a working discrete fallback
-desktop (no apple_set_os, no mux readout).
+**Mux investigation CLOSED 2026-08-08 (negative):** the forced-DIS test
+(macOS session verified ending on NVIDIA → cold off → UKI → still `DIS:+`)
+completed the pair with the 08-07 Intel-ended control; Linux UKI boots land
+on DIS regardless of NVRAM state or the preceding macOS mux position. The
+08-01 `i915drmfb` success is the single unreproduced anomaly. Also recorded:
+Limine config identical across 08-01 success and 08-05 retest (boot path
+ruled out); `gpuswitch 1` = discrete, `2` = integrated on this machine
+(inverted from common docs); LTS bare entry + proprietary nvidia 470 is a
+working discrete fallback. Repeatable stable state = discrete desktop (UKI
++ nouveau, or LTS + nvidia). Full record:
+`docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`.
 
 Daily usable path until re-proven: discrete/Nouveau desktop (hot). Optional:
 set macOS prefs back to discrete `%00%00%00%00` for more predictable Linux

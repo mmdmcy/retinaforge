@@ -77,28 +77,63 @@ verified-mux-on-DIS macOS session preceded the Linux power-on. The gpuswitch
 = 2 setting is expected to persist in macOS for the next attempt (verify
 with `pmset -g` on the next macOS boot).
 
+## Result (decisive negative)
+
+Ran: macOS session with panel verified on **NVIDIA/DIS** (`gpuswitch 1` →
+panel on GT 750M, Main Display on NVIDIA) → cold power-off → plain power-on
+→ Limine → UKI entry selected → Linux `7.1.5-1-cachyos` →
+`vga_switcheroo`: **`2:DIS:+:Pwr`**.
+
+Combined with the 08-07 control test (macOS ended on **Intel**, verified →
+cold off → UKI → also `DIS:+`), the mux outcome for a Linux UKI boot is now
+shown **invariant to the mux position at the end of the preceding macOS
+session**. Both end-states (Intel and discrete) yield `DIS` on the next
+Linux boot. The mux-position-persistence hypothesis is **refuted**.
+
+## Conclusion of the mux investigation
+
+Every controlled Linux UKI boot since 08-01 has landed on `DIS`:
+- 08-05 retest (same recipe, Intel pref)
+- 08-07 E2 (SMC reset, `gpu-policy %01` + `gpu-power-prefs %01`, macOS on iGPU)
+- 08-07 control boot (macOS on iGPU at end)
+- 08-08 test (macOS on DIS at end)
+
+while macOS power-ons from the same NVRAM state consistently honor the
+policy (panel on Intel, or on NVIDIA per `gpuswitch`). The 08-01
+`i915drmfb` success is the **single anomaly** with no reproduced factor;
+the firmware effectively defaults non-macOS power-ons to the discrete side
+on this machine, and no NVRAM/mux-position input changes that. The
+remaining explanation space is a one-off firmware/SMC state (e.g. a
+transient condition at that specific power-on) — not actionable via the
+recipe, and not worth further identical loops.
+
+## Bonus finding: `gpuswitch` values are inverted on this machine
+
+`pmset -g` semantics observed empirically (MBP11,3, Big Sur 11.7.11):
+- `gpuswitch 1` → panel on **NVIDIA** (discrete)
+- `gpuswitch 2` → panel on **Intel** (integrated)
+
+Opposite of the commonly documented mapping (1 = integrated, 2 =
+discrete). Verified on two separate boots. This does not affect the Linux
+side (Linux does not read `gpuswitch`), but it matters for anyone setting
+macOS-side policy.
+
+## Practical outcome for the lab
+
+- The repeatable, stable Linux state is the **discrete desktop**: UKI entry
+  (nouveau) or LTS bare entry (proprietary nvidia 470). Both work at
+  2880×1800; panel mux DIS; idle GPU ~40 °C.
+- Intel panel ownership under Linux is not reachable through NVRAM/mux
+  state levers on current firmware behavior; treat the 08-01 success as
+  unreproduced until a new factor appears.
+- For "proper" daily stability, the E4 migration (Debian trixie 6.12 or Mint
+  22.x, EFI-stub/UKI boot) remains the recommended operational change; it
+  will NOT by itself restore Intel panel ownership.
+
 ## Next test (single factor, one power cycle)
 
-1. From the running Linux: power off; user holds Option at power-on → boot
-   **macOS**.
-2. Verify `pmset -g` shows `gpuswitch 2`; force a full session: `system_profiler`
-   must show **NVIDIA** with the display attached (panel on DIS), not Intel.
-   If the panel is still on Intel, wait/retrigger until the mux lands DIS,
-   then confirm again.
-3. **Cold power-off** (no reboot).
-4. Power on **without** Option → Limine default entry 3 (UKI) → Linux.
-5. Read `vga_switcheroo`: if `IGD:+` → the mux position at macOS power-down
-   is the lever (recipe: end macOS on DIS before Linux boots); if `DIS:+`
-   again → firmware lands Linux boots on DIS regardless of macOS-side state,
-   leaving the 08-01 success as the single unexplained anomaly.
+(original plan — superseded by the result above; kept for the record)
 
-Checklist:
-- [ ] macOS booted with `gpuswitch 2` verified
-- [ ] Panel confirmed on DIS in `system_profiler` immediately before power-off
-- [ ] Cold power-off, then plain power-on (no Option)
-- [ ] UKI kernel confirmed (`uname -r` = 7.1.5-1-cachyos)
-- [ ] `vga_switcheroo` readout recorded
-- [ ] `check-intel-first-panel.sh` result recorded (if IGD)
 
 ## References
 
