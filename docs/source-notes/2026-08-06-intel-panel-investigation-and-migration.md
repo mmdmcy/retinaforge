@@ -171,6 +171,14 @@ the mux on DIS at power-on". The failure is upstream of the kernel.
 
 ### E2 — Clean-slate retry of the exact 08-01 recipe (primary fix attempt)
 
+**RESULT 2026-08-07: negative; control test refuted hypothesis (c).** Full
+run with SMC reset, byte-verified Intel `gpu-policy %01` + `gpu-power-prefs`
+`%01%00%00%00`, and macOS on iGPU immediately before cold power-off still
+came up `DIS:+` on the UKI boot; a subsequent macOS power-on returned on
+Intel with the variables intact. New finding: the honored variable on this
+machine/Big Sur is `gpu-policy` (see
+[`2026-08-07-e2-clean-slate-and-control-test.md`](2026-08-07-e2-clean-slate-and-control-test.md)).
+
 The 08-05 attempts deviated from the 08-01 sequence (extra macOS sessions
 between write and boot, `pmset` forcing) and, after the first failure, ran
 from a contaminated state. Restore the known-good state first, then mirror

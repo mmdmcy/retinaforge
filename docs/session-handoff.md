@@ -30,7 +30,7 @@ Flush-pattern / AHCI diagnostic tooling is in-tree:
 Do not reopen physical storage boots without a fresh user-present checkpoint.
 Writable MSI+NCQ remains forbidden.
 
-## Graphics — current state (2026-08-05)
+## Graphics — current state (2026-08-07)
 
 **Last proven Intel panel success:** 2026-08-01 (`i915drmfb`). See
 `docs/graphics/intel-first-repro.md` and
@@ -49,14 +49,19 @@ state, or Linux destroying the variable are the ranked hypotheses. Details +
 Debian/Mint migration plan:
 `docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`.
 
-**2026-08-07 (E1 done):** the UKI `cachyos-apple-set-os.efi` was built
-2026-08-01 12:27 and embeds kernel `7.1.5-1-cachyos`; the same UKI booted
-both the 08-01 success and the 08-05 failure, so the kernel binary was
-identical across both — kernel-skew hypothesis fully closed, failure is
-firmware-side. Same-session observation: hybrid black-panel recovery needed
-backlight max + sddm restart **plus** `xrandr --output eDP-1 --off/--auto`
-re-modest (updated in `intel-first-repro.md`). Mux still `DIS:+`; desktop
-usable on Nouveau until E2 is run.
+**2026-08-07 (E1 + E2 + control test):** E1 closed the kernel-skew gap — UKI
+`cachyos-apple-set-os.efi` (built 08-01 12:27) embeds `7.1.5-1-cachyos`,
+identical on success and failure. Full E2 (SMC reset → Intel prefs → plain
+reboot survival check → iGPU session in macOS → cold off → UKI) **failed**:
+mux `DIS:+` again. But the control test refuted hypothesis (c): macOS
+returned on **Intel** and `gpu-policy %01` survived the Linux session.
+Key discovery: on this machine + Big Sur the honored variable is
+**`gpu-policy`** (no GUID, listed by `nvram -p`); `gpu-power-prefs` is
+rewritten by macOS to discrete and is not listed by `nvram -p`. Same NVRAM
+Intel state → macOS power-on = panel on IGD, Linux power-on = mux DIS; open
+question is whether macOS switches the mux at runtime (AGS) or firmware
+discriminates by boot target. Full record:
+`docs/source-notes/2026-08-07-e2-clean-slate-and-control-test.md`.
 
 Do **not** burn another session on identical NVRAM + cold UKI loops. Next
 graphics attempt must change one factor and get a user-present checkpoint.
@@ -117,11 +122,13 @@ reconnect when that OS is the running system.
    Primary goal is stability; re-ranked analysis says the failure is
    firmware-side (switcheroo `+` is gmux-register truth set before Linux
    boots), so migration is not expected to be the fix by itself. User checkpoint.
-2. **E2 — clean-slate retry of the 08-01 recipe (primary fix):** one
-   deliberate SMC reset → macOS pref write + verify → plain macOS reboot →
-   pref survival check (else fix AGS/`gpuswitch`) → panel on iGPU in macOS →
-   immediate cold power-off → UKI boot. Control test if it fails: cold off
-   and boot macOS again, log which GPU it returns on.
+2. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative**: mux `DIS:+`
+   despite SMC reset + verified Intel prefs; control test refuted
+   hypothesis (c) (variable survives Linux; macOS returns on Intel). Next
+   single-factor experiment: track the gmux/mux position through "end of
+   macOS session → cold off → Linux boot" — end macOS on DIS vs. on Intel
+   and see whether the next Linux boot's switcheroo state follows the
+   last macOS-side mux position (see the 08-07 note, "Next experiment").
 3. ~~Pin the 08-01 CachyOS kernel~~ — **DONE 2026-08-07**: UKI built
    2026-08-01 12:27, kernel `7.1.5-1-cachyos`, identical on success/failure.
 4. Suspend/resume **after** Intel panel ownership is re-proven.
