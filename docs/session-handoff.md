@@ -30,6 +30,22 @@ Flush-pattern / AHCI diagnostic tooling is in-tree:
 Do not reopen physical storage boots without a fresh user-present checkpoint.
 Writable MSI+NCQ remains forbidden.
 
+## Daily stable recipe (verified 2026-08-08)
+
+**CachyOS now boots into a working desktop with zero intervention:**
+
+- Boot → Limine → LTS bare entry (`6.18.40-1-cachyos-lts`) with the
+  proprietary nvidia driver (470.256.02) driving the panel on the DIS mux at
+  2880×1800; mux `DIS` is deterministic for every Linux boot.
+- `scripts/graphics/gmux-backlight-max.service` (installed at
+  `/etc/systemd/system/`, enabled) forces `gmux_backlight` to 1023 at boot —
+  kills the recurring black screen. Reinstall if recreated.
+- Note: reboots land on the LTS entry even though `default_entry: 3` (UKI)
+  is set; the selection mechanism is unexplained but consistent and works —
+  verify with `uname -r` before trusting which path ran.
+- macOS stays the recovery reference; `gpu-policy %01` / `gpu-power-prefs`
+  left as-is (discrete prefs are NOT needed for predictable boots anymore).
+
 ## Graphics — current state (2026-08-07)
 
 **Last proven Intel panel success:** 2026-08-01 (`i915drmfb`). See
@@ -127,12 +143,14 @@ reconnect when that OS is the running system.
 
 ## Next experiments (pick one; do not combine)
 
-1. **Distro migration (recommended):** Debian trixie (6.12) or Linux Mint 22.x
-   (HWE 6.11) per the 2026-08-06 investigation note; rebuild EFI-stub/UKI
-   entry; repeat `intel-first-repro.md`; record kernel version and UKI date.
-   Primary goal is stability; re-ranked analysis says the failure is
-   firmware-side (switcheroo `+` is gmux-register truth set before Linux
-   boots), so migration is not expected to be the fix by itself. User checkpoint.
+0. **Daily use / no experiment** — the discrete desktop works (see Daily
+   stable recipe above); treat further graphics work as optional.
+1. **Distro migration (recommended when ready):** Linux Mint 22.x (HWE
+   6.8/6.11 kernels, refreshed within the LTS cycle — not a frozen kernel)
+   per the 2026-08-06 investigation note; rebuild EFI-stub/UKI entry;
+   reinstall `gmux-backlight-max.service`; discrete desktop carries over.
+   Mint matches the operator's stated plan and update preference. User
+   checkpoint; do not combine with other experiments.
 2. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative**: mux `DIS:+`
    despite SMC reset + verified Intel prefs; control test refuted
    hypothesis (c) (variable survives Linux; macOS returns on Intel). Next

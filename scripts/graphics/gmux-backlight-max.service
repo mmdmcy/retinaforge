@@ -1,0 +1,11 @@
+[Unit]
+Description=Force GMUX backlight to max at boot
+After=systemd-udevd.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo 1023 > /sys/class/backlight/gmux_backlight/brightness'
+
+[Install]
+WantedBy=multi-user.target
