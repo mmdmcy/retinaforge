@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -65,6 +65,13 @@ discriminates by boot target. Full record:
 
 Do **not** burn another session on identical NVRAM + cold UKI loops. Next
 graphics attempt must change one factor and get a user-present checkpoint.
+**Current open test (2026-08-08):** "macOS session ends on DIS → cold off →
+UKI boot" — see `docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`.
+One power cycle, single factor; `gpuswitch 2` is set in macOS and must be
+verified on the next macOS boot. Also recorded: Limine config was identical
+across the 08-01 success and 08-05 retest (boot path ruled out), and the LTS
+bare entry + proprietary nvidia driver is a working discrete fallback
+desktop (no apple_set_os, no mux readout).
 
 Daily usable path until re-proven: discrete/Nouveau desktop (hot). Optional:
 set macOS prefs back to discrete `%00%00%00%00` for more predictable Linux
