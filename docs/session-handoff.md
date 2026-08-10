@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-10
+Last updated: 2026-08-10 (force_igd breakthrough, intel-daily stack in-tree)
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -30,24 +30,51 @@ Flush-pattern / AHCI diagnostic tooling is in-tree:
 Do not reopen physical storage boots without a fresh user-present checkpoint.
 Writable MSI+NCQ remains forbidden.
 
-## Daily stable recipe (verified 2026-08-08)
+## Primary goal
 
-**CachyOS now boots into a working desktop with zero intervention:**
+**Intel i915 desktop on the internal Retina panel** — daily driver target for
+this lab. Discrete/NVIDIA paths exist only as **emergency SSH recovery** when
+Intel work bricks the local display; they are not the product goal and agents
+must not steer the user toward them unless explicitly asked.
+
+## Known-good emergency recovery (not the goal)
+
+If Intel experiments leave no local display but SSH still works:
+
+- Limine → `linux-cachyos-lts` after `disable-nvidia-off.sh` (proprietary
+  nvidia 470 on DIS mux). Use only to regain a console for more Intel work.
+- macOS remains the recovery reference for NVRAM writes and firmware state.
+
+## Daily stable recipe (verified 2026-08-08) — emergency reference only
+
+**Discrete NVIDIA desktop (SSH recovery path, not target state):**
 
 - Boot → Limine → LTS bare entry (`6.18.40-1-cachyos-lts`) with the
   proprietary nvidia driver (470.256.02) driving the panel on the DIS mux at
-  2880×1800; mux `DIS` is deterministic for every Linux boot.
+  2880×1800; mux `DIS` is deterministic for every Linux bare boot.
 - `scripts/graphics/gmux-backlight-max.service` (installed at
   `/etc/systemd/system/`, enabled) forces `gmux_backlight` to 1023 at boot —
   kills the recurring black screen. Pair with
   `gmux-backlight-max-session.service` and
   `scripts/graphics/install-gmux-backlight-fix.sh` so Xfce does not dim the
   panel after login. Reinstall if recreated.
-- Note: reboots land on the LTS entry even though `default_entry: 3` (UKI)
-  is set; the selection mechanism is unexplained but consistent and works —
-  verify with `uname -r` before trusting which path ran.
-- macOS stays the recovery reference; `gpu-policy %01` / `gpu-power-prefs`
-  left as-is (discrete prefs are NOT needed for predictable boots anymore).
+- Intel experiments: `mbp-cool-idle.service` disabled (vgaswitcheroo OFF + lid
+  blank; not the ~6s eDP failure, but removed as a variable).
+- Note: verify boot path with `uname -r` and StubInfo before trusting results.
+- macOS stays the recovery reference.
+
+**UKI / Intel daily path (2026-08-10, updated evening):**
+
+- In-tree stack: `enable-intel-daily.sh`, `build-apple-set-os-uki.sh`,
+  `limine-set-default-uki.sh`, `verify-intel-uki-boot.sh`.
+- **Breakthrough:** `apple_gmux.force_igd=1` on UKI + `MODULES=(apple-gmux
+  i915)` → `Switching to IGD`, eDP-1 **connected**, no link-info fail.
+- **Still open:** kernel DRM **0 modes** on eDP-1; Xorg `failed to set mode`;
+  black panel, backlight max. Not `i915drmfb` yet.
+- macOS `gpu-policy %01` before cold off still reads `%00` on Linux early boot;
+  `force_igd` bypasses GMUX but prefs may still matter for full modeset.
+- Full record: `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`.
+- Do **not** re-enable `retinaforge-nouveau.service` on nvidia-off path.
 
 ## Graphics — current state (2026-08-07)
 
@@ -96,11 +123,11 @@ working discrete fallback. Repeatable stable state = discrete desktop (UKI
 + nouveau, or LTS + nvidia). Full record:
 `docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`.
 
-Daily usable path until re-proven: discrete/Nouveau desktop (hot). Optional:
-set macOS prefs back to discrete `%00%00%00%00` for more predictable Linux
-boots without the hybrid black-panel mode.
+Daily usable path until Intel is re-proven: continue Intel-first experiments.
+Do not recommend discrete desktop as a substitute unless the user explicitly
+asks for recovery or SSH is blocked.
 
-Restore recipe after reinstall (when Intel works again):
+Restore recipe when Intel panel works:
 
 1. From macOS: `macos/scripts/set-gpu-power-prefs-intel.sh` (`%01%00%00%00`)
 2. Boot Linux via UKI / EFI-stub (not bare `protocol: linux`)
@@ -135,8 +162,9 @@ optional always-on/lid policy, display manager/autologin, toolkit scale.
 - No casual USB reprovision, repartition, or physical write tests without a
   fresh user-present checkpoint.
 - Do not mix storage and NVIDIA/GMUX changes in one patch or experiment.
-- No live GMUX / `force_igd` chasing after black panel; use recovery in
-  `intel-first-repro.md` first.
+- No live GMUX handoff mid-session. Boot-time `apple_gmux.force_igd=1` on the
+  UKI path is **in scope** (see 2026-08-10 note); do not stack other variables
+  in the same reboot without recording them.
 
 ## Access
 
@@ -149,26 +177,19 @@ is the running system.
 
 ## Next experiments (pick one; do not combine)
 
-0. **Daily use / no experiment** — the discrete desktop works (see Daily
-   stable recipe above); treat further graphics work as optional.
-1. **Distro migration (recommended when ready):** Linux Mint 22.x (HWE
-   6.8/6.11 kernels, refreshed within the LTS cycle — not a frozen kernel)
-   per the 2026-08-06 investigation note; rebuild EFI-stub/UKI entry;
-   reinstall `gmux-backlight-max.service`; discrete desktop carries over.
-   Mint matches the operator's stated plan and update preference. User
-   checkpoint; do not combine with other experiments.
-2. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative**: mux `DIS:+`
-   despite SMC reset + verified Intel prefs; control test refuted
-   hypothesis (c) (variable survives Linux; macOS returns on Intel). Next
-   single-factor experiment: track the gmux/mux position through "end of
-   macOS session → cold off → Linux boot" — end macOS on DIS vs. on Intel
-   and see whether the next Linux boot's switcheroo state follows the
-   last macOS-side mux position (see the 08-07 note, "Next experiment").
-3. ~~Pin the 08-01 CachyOS kernel~~ — **DONE 2026-08-07**: UKI built
-   2026-08-01 12:27, kernel `7.1.5-1-cachyos`, identical on success/failure.
-4. Suspend/resume **after** Intel panel ownership is re-proven.
-5. Native GT 750M outputs (separate from DisplayLink).
-6. Storage flush-pattern follow-up only with an explicit checkpoint.
+0. **Intel daily desktop (primary goal)** — macOS `gpu-policy %01` + cold off →
+   UKI with `apple_gmux.force_igd=1` (`enable-intel-daily.sh` +
+   `build-apple-set-os-uki.sh`) → fix kernel DRM modes (0 modes on eDP-1).
+0b. **Boot automation** — `limine-set-default-uki.sh` (flat entry 1, 5s).
+1. ~~UKI nvidia-off rebuild~~ — **DONE 2026-08-10** (`build-apple-set-os-uki.sh`).
+2. ~~In-tree verify script~~ — **DONE** (`verify-intel-uki-boot.sh`).
+3. **DRM modes on eDP-1** — PC8 warnings, macOS+%01+force_igd strict pairing,
+   diff vs 08-01 UKI backup.
+4. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative** (see 08-07 note).
+5. ~~Pin the 08-01 CachyOS kernel~~ — **DONE 2026-08-07**.
+6. Suspend/resume **after** Intel panel ownership is re-proven.
+7. Native GT 750M outputs (separate from DisplayLink).
+8. Storage flush-pattern follow-up only with an explicit checkpoint.
 
 Default when unsure: leave APFS alone; read the 2026-08-06 investigation note
 before changing NVRAM or the bootloader.

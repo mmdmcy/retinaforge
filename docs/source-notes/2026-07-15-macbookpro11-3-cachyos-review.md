@@ -290,7 +290,9 @@ description, and publication notes can be updated together.
 ## Recheck Triggers
 
 - The reviewed repository gains commits, issues, releases, measurements, or
-  support for another bootloader/distro.
+  support for another bootloader/distro. **Rechecked README 2026-08-10** —
+  author added `verify-all.sh`, hybrid GPU results, and final report; see
+  [`2026-08-10-uki-intel-attempt-and-xorg-fail.md`](2026-08-10-uki-intel-attempt-and-xorg-fail.md).
 - Upstream Linux changes the `apple_set_os` DMI list or GMUX behavior.
 - A current kernel demonstrates automatic safe dGPU power-off without Nouveau.
 - This project begins an actual Intel-only boot test.

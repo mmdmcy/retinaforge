@@ -7,7 +7,7 @@ machine (`MacBookPro11,3`) that RetinaForge targets.
 | Short name | Hardware | Typical OS | Role |
 | --- | --- | --- | --- |
 | `neo` | MacBook Neo | macOS | Daily controller / fleet operator Mac |
-| `mbp113-linux` | MacBook Pro 11,3 Retina (Late 2013) | CachyOS Linux | RetinaForge lab OS; discrete NVIDIA desktop baseline |
+| `mbp113-linux` | MacBook Pro 11,3 Retina (Late 2013) | CachyOS Linux | RetinaForge lab OS; **Intel i915 desktop target** |
 | `mbp113-macos` | Same `MacBookPro11,3` unit | macOS Big Sur | Recovery reference and Intel-panel experiments |
 
 ## Legacy aliases

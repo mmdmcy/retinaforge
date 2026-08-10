@@ -68,10 +68,40 @@ sudo nvram fa4ce28d-b62f-4c99-9cc3-6815686e30f9:gpu-power-prefs
 - Intel lab value: `%01%00%00%00`
 - Discrete / macOS-oriented value: `%00%00%00%00`
 
+On this workbench + Big Sur, also set **`gpu-policy`** (not only
+`gpu-power-prefs`):
+
+```bash
+sudo nvram gpu-policy=%01
+nvram -p | grep -i gpu
+```
+
+Or use `macos/scripts/prepare-intel-from-macos.sh`.
+
+**Cold shutdown** (`sudo shutdown -h now`), not Restart, before the UKI boot.
+
 ## Step B — Boot Linux via EFI stub / UKI
 
 Reboot holding the firmware boot picker if needed, select the Linux ESP, then
 the **Intel probe / UKI** entry (not a bare `protocol: linux` fallback).
+
+On this lab (2026-08-10): use the in-tree stack:
+
+```bash
+sudo scripts/graphics/enable-intel-daily.sh
+sudo scripts/graphics/build-apple-set-os-uki.sh   # adds apple_gmux.force_igd=1
+```
+
+Limine autoboot: `scripts/graphics/limine-set-default-uki.sh` (flat UKI entry,
+`default_entry: 1`, 5s timeout).
+
+**Required on MacBookPro11,3 today:** UKI cmdline must include
+`apple_gmux.force_igd=1`, and initramfs must load `apple-gmux` before `i915`
+(see `scripts/graphics/mkinitcpio-intel-uki.conf`). Without this, i915 often
+logs `failed to retrieve link info, disabling eDP` even when Set OS enumerates
+the iGPU. With `force_igd`, eDP-1 may show **connected** while kernel DRM modes
+are still empty — see
+[`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](../source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md).
 
 ## Step C — Verify on Linux
 
@@ -99,9 +129,11 @@ echo OFF | sudo tee /sys/kernel/debug/vgaswitcheroo/switch
 sudo cat /sys/kernel/debug/vgaswitcheroo/switch
 ```
 
-Re-check after later boots; `DIS` may return to `Pwr`.  
-**Do not** use live `apple_gmux.force_igd=1` or casual IGD/DIS handoff as a
-substitute for Steps A–B.
+Re-check after later boots; `DIS` may return to `Pwr`.
+
+**Do not** use live mid-session IGD/DIS handoff or `mbp-cool-idle`-style
+switcheroo hacks as a substitute for Steps A–B. Boot-time `force_igd` on the
+UKI path is documented above; it is not the same as live forcing after login.
 
 ## External displays (separate from this recipe)
 

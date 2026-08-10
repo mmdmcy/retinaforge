@@ -1,0 +1,12 @@
+[Unit]
+Description=Log gpu-policy at early boot (Intel mux diagnostics)
+DefaultDependencies=no
+After=local-fs.target
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/retinaforge-log-gpu-policy.sh
+
+[Install]
+WantedBy=multi-user.target

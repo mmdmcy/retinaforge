@@ -1,0 +1,15 @@
+[Unit]
+Description=Load Nouveau as Apple GMUX discrete client
+After=multi-user.target
+ConditionPathExists=/sys/module/i915
+# Intel-daily / nvidia-off blocks nouveau via modprobe; do not fight that policy.
+ConditionPathExists=!/etc/modprobe.d/retinaforge-nvidia-off.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/modprobe nouveau
+ExecStart=/bin/bash -c 'mountpoint -q /sys/kernel/debug || mount -t debugfs debugfs /sys/kernel/debug; sleep 2; if [[ -e /sys/kernel/debug/vgaswitcheroo/switch ]]; then logger -t retinaforge "vgaswitcheroo: $(tr "\n" " | " </sys/kernel/debug/vgaswitcheroo/switch)"; else logger -t retinaforge "vgaswitcheroo missing after nouveau"; fi'
+
+[Install]
+WantedBy=multi-user.target

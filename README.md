@@ -24,7 +24,7 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux Intel-first graphics / GMUX | Intel panel path verified; dGPU power / native externals still open | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md) |
+| Linux Intel-first graphics / GMUX | **Active** — `force_igd` opens IGD/eDP; DRM modes still 0 (2026-08-10) | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs
