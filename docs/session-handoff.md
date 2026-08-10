@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-08
+Last updated: 2026-08-10
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -39,7 +39,10 @@ Writable MSI+NCQ remains forbidden.
   2880×1800; mux `DIS` is deterministic for every Linux boot.
 - `scripts/graphics/gmux-backlight-max.service` (installed at
   `/etc/systemd/system/`, enabled) forces `gmux_backlight` to 1023 at boot —
-  kills the recurring black screen. Reinstall if recreated.
+  kills the recurring black screen. Pair with
+  `gmux-backlight-max-session.service` and
+  `scripts/graphics/install-gmux-backlight-fix.sh` so Xfce does not dim the
+  panel after login. Reinstall if recreated.
 - Note: reboots land on the LTS entry even though `default_entry: 3` (UKI)
   is set; the selection mechanism is unexplained but consistent and works —
   verify with `uname -r` before trusting which path ran.
@@ -138,8 +141,11 @@ optional always-on/lid policy, display manager/autologin, toolkit scale.
 ## Access
 
 Use the existing lab SSH key material and host known_hosts files already
-configured for this workspace. The agent may reboot the Linux lab OS and
-reconnect when that OS is the running system.
+configured for this workspace. Prefer the fleet names in
+[`docs/fleet-naming.md`](fleet-naming.md): `neo` (controller Mac),
+`mbp113-linux` (CachyOS lab OS), `mbp113-macos` (Big Sur on the same
+hardware). The agent may reboot the Linux lab OS and reconnect when that OS
+is the running system.
 
 ## Next experiments (pick one; do not combine)
 

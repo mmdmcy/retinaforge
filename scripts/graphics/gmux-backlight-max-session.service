@@ -1,0 +1,12 @@
+[Unit]
+Description=Force GMUX backlight to max after the desktop session starts
+After=display-manager.service
+Wants=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gmux-backlight-max.sh
+ExecStartPost=/bin/sh -c 'sleep 8; /usr/local/sbin/gmux-backlight-max.sh'
+
+[Install]
+WantedBy=multi-user.target

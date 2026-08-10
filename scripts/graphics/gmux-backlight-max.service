@@ -5,7 +5,7 @@ Before=display-manager.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'echo 1023 > /sys/class/backlight/gmux_backlight/brightness'
+ExecStart=/usr/local/sbin/gmux-backlight-max.sh
 
 [Install]
 WantedBy=multi-user.target

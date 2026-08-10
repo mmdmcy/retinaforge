@@ -30,6 +30,9 @@ Results must not be generalized to every 2013 MacBook Pro, every
 Private captures, recovery media, deal photos, raw traces, and build outputs
 stay out of Git under the local RetinaForge `local-only/` hub.
 
+Fleet SSH aliases for the lab laptop vs. the controller Mac are documented in
+[`docs/fleet-naming.md`](docs/fleet-naming.md).
+
 ## Native Big Sur Workstation
 
 Keep Big Sur as the stable host. Use MacPorts for maintained packages, compile
