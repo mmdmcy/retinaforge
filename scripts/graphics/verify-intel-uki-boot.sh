@@ -47,9 +47,9 @@ for mod in nvidia nvidia_drm nvidia_modeset nvidia_uvm; do
 done
 
 if lsmod | grep -q '^nouveau '; then
-	warn "nouveau is loaded"
+	info "nouveau loaded (expected for indexed GMUX switcheroo)"
 else
-	pass "nouveau absent"
+	warn "nouveau not loaded (indexed GMUX may lack eDP modes)"
 fi
 
 if [[ -f /etc/modprobe.d/retinaforge-nvidia-off.conf ]]; then

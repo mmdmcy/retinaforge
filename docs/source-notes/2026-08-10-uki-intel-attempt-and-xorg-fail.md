@@ -162,3 +162,66 @@ re-captured. `force_igd` is necessary but not sufficient on today's firmware.
 | UKI kernel | `7.1.5-1-cachyos` |
 | nvidia/nouveau | absent |
 | gmux switch log | `Switching to IGD` |
+
+## Part 4 — Evening research (enable_dc, Aug-1 UKI, nouveau switcheroo)
+
+### `i915.enable_dc=0`
+
+Added to UKI cmdline. PC8 warnings reduced in early probe. **No change:** eDP
+connected, **0 kernel DRM modes**, Xorg `failed to set mode`.
+
+### Aug-1 UKI backup (`cachyos-apple-set-os.efi.bak-20260810-164347`, 170 MB)
+
+Older image cmdline: cmdline `modprobe.blacklist=nvidia*` only (no `force_igd`,
+no `install /bin/false`). Booting it while `retinaforge-apple-gmux-intel.conf`
+remained on disk still applied `force_igd` via modprobe — **same 0 modes**.
+
+### Blocking nouveau was wrong
+
+With `force_igd` disabled and nouveau allowed, live `modprobe nouveau` yields:
+
+- `vgaswitcheroo` active
+- **11 modes** on `card0-eDP-1` (panel on **DIS / nouveau**)
+- `echo IGD` to switcheroo sets `IGD:+` but panel stays on nouveau `card0`
+
+Indexed GMUX (`4.0.8 [indexed]`) uses
+`VGA_SWITCHEROO_NEEDS_EDP_CONFIG`. **Nouveau must be loadable** for switcheroo
+registration; blocking it via `install nouveau /bin/false` prevented proper
+eDP mode enumeration.
+
+### Combined stack (current experiment)
+
+| Component | Setting |
+| --- | --- |
+| nvidia-off | proprietary blocked only; **nouveau allowed** |
+| `apple_gmux.force_igd=1` | modprobe + UKI cmdline |
+| `i915.enable_dc=0` | UKI cmdline |
+| initramfs `MODULES` | `apple-gmux nouveau i915` |
+| `retinaforge-gmux-nouveau.service` | early `modprobe nouveau` |
+| `softdep` | `i915 pre: apple_gmux nouveau` |
+
+**Boot log (best yet):**
+
+```text
+apple_gmux: Switching to IGD
+nouveau: GK107 ...
+vgaswitcheroo: IGD:+:Pwr  DIS: (not +)
+i915 eDP-2: connected, link-status Good, EDID present
+kernel modes on eDP-2: 0
+Xorg: failed to set mode 2880x1800
+```
+
+EDID and link-status are good; **encoder 92 not bound** to connector 93; mode
+list never populated. `modetest -s 93@92:2880x1800` fails with “failed to find
+mode”.
+
+### Ranked next steps
+
+1. **macOS `%01` cold off + this nouveau+force_igd stack** (not yet tested as
+   one strict cycle after the stack change).
+2. **Module load order experiment:** `nouveau` before `apple_gmux` force_igd
+   switch (initramfs hook or delayed `force_igd`).
+3. **Kernel/upstream:** indexed GMUX + i915 eDP mode creation when IGD owns
+   mux but modes stay empty — possible driver gap on Haswell Retina.
+4. **Diff Aug-1 UKI initramfs** contents (170 MB vs 151 MB) for missing firmware
+   or modules beyond cmdline.

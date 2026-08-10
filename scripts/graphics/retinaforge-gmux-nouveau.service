@@ -1,0 +1,14 @@
+[Unit]
+Description=Load Nouveau for Apple GMUX switcheroo (Intel UKI path)
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=systemd-udev-settle.service display-manager.service
+ConditionPathExists=/sys/module/apple_gmux
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/modprobe nouveau
+
+[Install]
+WantedBy=multi-user.target

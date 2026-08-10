@@ -55,6 +55,12 @@ fi
 if [[ "$CMDLINE" != *plymouth.enable=0* ]]; then
 	CMDLINE+=" plymouth.enable=0 systemd.show_status=true loglevel=7"
 fi
+if [[ "$CMDLINE" != *apple_gmux.force_igd* ]]; then
+	CMDLINE+=" apple_gmux.force_igd=1"
+fi
+if [[ "$CMDLINE" != *i915.enable_dc=0* ]]; then
+	CMDLINE+=" i915.enable_dc=0"
+fi
 
 CMDLINE_FILE="$(mktemp)"
 trap 'rm -f "$CMDLINE_FILE"' EXIT
