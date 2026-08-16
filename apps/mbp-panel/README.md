@@ -10,8 +10,9 @@ buttons only write vgaswitcheroo `OFF` / `ON` — sleep or wake the 750M
 while Iris Pro keeps the panel. They **do not** send `IGD` or `DIS`.
 Those mux hops black the lid on this indexed Apple GMUX.
 
-This is not Big Sur Automatic Graphics Switching. Optional OpenGL offload
-while the 750M is awake is still `prime-run` / `DRI_PRIME=1`.
+This is not Big Sur Automatic Graphics Switching. **Run on 750M** on the
+plate wakes the chip if needed and starts the command with `DRI_PRIME=1`.
+You do not have to memorize `prime-run`.
 
 ## Install (CachyOS / Arch, this machine)
 
@@ -38,9 +39,9 @@ The desktop file is also copied to `/etc/xdg/autostart/` so the jewel
 returns after login.
 
 The **?** on the plate is the field card: what this toggle is for (unused
-750M power only), when sage/idle is correct, when to Wake for `prime-run`,
-and what belongs on the NVIDIA LTS boot instead. Right-click the jewel
-for the same “What is this?” entry.
+750M power only), when sage/idle is correct, **Run on 750M** vs Proton on
+Intel, and what belongs on the NVIDIA LTS boot instead. The long form is
+[`docs/graphics/max-value-and-omarchy.md`](../../docs/graphics/max-value-and-omarchy.md).
 
 `install.sh` refuses to guess a Qt binding. Polkit lets a local active
 `wheel` or `sudo` session run the helper without a password prompt. The
@@ -59,7 +60,7 @@ helper still has to run as root because vgaswitcheroo lives in debugfs.
 - No panel mux hops from this app.
 - No proprietary NVIDIA 470 bind/unbind.
 - Writes are refused unless DMI product is `MacBookPro11,3`.
-- Sleeping the 750M breaks `prime-run` until you wake it again.
+- Sleeping the 750M breaks `prime-run` until you wake it again (Run on 750M wakes it for you).
 
 ## Layout
 

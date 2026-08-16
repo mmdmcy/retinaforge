@@ -10,6 +10,7 @@ from __future__ import annotations
 import faulthandler
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -17,7 +18,7 @@ import traceback
 from pathlib import Path
 
 try:
-    from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer
+    from PyQt6.QtCore import QPoint, QProcess, QProcessEnvironment, QRectF, QSettings, Qt, QTimer
     from PyQt6.QtGui import (
         QAction,
         QColor,
@@ -34,9 +35,12 @@ try:
     )
     from PyQt6.QtWidgets import (
         QApplication,
+        QCompleter,
+        QFileDialog,
         QFrame,
         QHBoxLayout,
         QLabel,
+        QLineEdit,
         QMenu,
         QProgressBar,
         QPushButton,
@@ -47,7 +51,7 @@ try:
         QWidget,
     )
 except ImportError:
-    from PySide6.QtCore import QPoint, QRectF, Qt, QTimer
+    from PySide6.QtCore import QPoint, QProcess, QProcessEnvironment, QRectF, QSettings, Qt, QTimer
     from PySide6.QtGui import (
         QAction,
         QColor,
@@ -64,9 +68,12 @@ except ImportError:
     )
     from PySide6.QtWidgets import (
         QApplication,
+        QCompleter,
+        QFileDialog,
         QFrame,
         QHBoxLayout,
         QLabel,
+        QLineEdit,
         QMenu,
         QProgressBar,
         QPushButton,
@@ -121,6 +128,35 @@ def helper_path() -> Path:
         if path.exists():
             return path
     return HELPER_CANDIDATES[-1]
+
+
+def load_prime_history() -> list[str]:
+    raw = QSettings("RetinaForge", "mbp-plate").value("prime_history", [])
+    if isinstance(raw, str):
+        return [raw] if raw else []
+    if not raw:
+        return []
+    return [str(item) for item in raw]
+
+
+def save_prime_history(entries: list[str]) -> None:
+    QSettings("RetinaForge", "mbp-plate").setValue("prime_history", entries[:12])
+
+
+def desktop_exec_line(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("Exec="):
+            try:
+                parts = shlex.split(line[5:])
+            except ValueError:
+                return None
+            cleaned = [part for part in parts if not part.startswith("%")]
+            return " ".join(cleaned) if cleaned else None
+    return None
 
 
 def run_helper(cmd: str) -> dict:
@@ -271,7 +307,7 @@ class Plate(QWidget):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.controller = controller
         self.setWindowTitle("RetinaForge plate")
-        self.setFixedSize(408, 528)
+        self.setFixedSize(408, 596)
         self.setObjectName("plate")
         self.setStyleSheet(
             f"""
@@ -376,6 +412,47 @@ class Plate(QWidget):
             btns.addWidget(button)
         status_lay.addLayout(btns)
 
+        run_row = QHBoxLayout()
+        run_row.setSpacing(8)
+        self.cmd_edit = QLineEdit()
+        self.cmd_edit.setPlaceholderText("glxgears   or   steam")
+        self.cmd_edit.setFont(_mono(12))
+        self.cmd_edit.setFixedHeight(34)
+        self.cmd_edit.setStyleSheet(
+            f"QLineEdit {{ background: #14110d; color: {INK}; border: 1px solid #5a5044;"
+            " border-radius: 7px; padding: 0 10px; selection-background-color: #4a4338; }}"
+        )
+        self.browse_btn = QPushButton("…")
+        self.browse_btn.setFixedSize(34, 34)
+        self.browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.browse_btn.setToolTip("Browse to a binary or .desktop")
+        self.browse_btn.setFont(_sans(14, True))
+        self.browse_btn.setStyleSheet(
+            f"QPushButton {{ background: #14110d; color: {INK}; border: 1px solid #5a5044;"
+            " border-radius: 7px; }}"
+        )
+        run_row.addWidget(self.cmd_edit, 1)
+        run_row.addWidget(self.browse_btn)
+        status_lay.addLayout(run_row)
+
+        self.run_btn = QPushButton("Run on 750M")
+        self.run_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.run_btn.setFixedHeight(36)
+        self.run_btn.setFont(_sans(13, True))
+        self.run_btn.setToolTip("Wake the 750M if needed, then DRI_PRIME=1")
+        self.run_btn.setStyleSheet(
+            f"QPushButton {{ background: {KEPLER}; color: #1a1611; border: 0;"
+            " border-radius: 7px; }}"
+            "QPushButton:disabled { background: #3a342c; color: #7a7166; }"
+        )
+        status_lay.addWidget(self.run_btn)
+        self._prime_history = load_prime_history()
+        self._completer = QCompleter(self._prime_history)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.cmd_edit.setCompleter(self._completer)
+        if self._prime_history:
+            self.cmd_edit.setText(self._prime_history[0])
+
         self.mux = QLabel("mux —")
         self.mux.setFont(_mono(11))
         self.mux.setStyleSheet(f"color: {MUTED};")
@@ -394,6 +471,9 @@ class Plate(QWidget):
         self.sleep_btn.clicked.connect(lambda: self.controller.act("dis-off"))
         self.wake_btn.clicked.connect(lambda: self.controller.act("dis-on"))
         self.help_btn.clicked.connect(self.toggle_help)
+        self.browse_btn.clicked.connect(self.browse_command)
+        self.run_btn.clicked.connect(lambda: self.controller.launch_on_750m())
+        self.cmd_edit.returnPressed.connect(lambda: self.controller.launch_on_750m())
 
     def _build_help(self) -> QWidget:
         scroll = QScrollArea()
@@ -434,9 +514,20 @@ class Plate(QWidget):
         inner_lay.addWidget(
             _help_block(
                 "OPENGL ON THE 750M  ·  TOGGLE",
-                "Wake 750M, then start the app with prime-run (DRI_PRIME=1). "
-                "When that app exits, Sleep 750M. This is render offload, "
-                "not macOS Automatic Graphics Switching — the lid stays on Intel.",
+                "Type a command (or … browse) and hit Run on 750M. The plate "
+                "wakes the chip if it is asleep, then starts the process with "
+                "DRI_PRIME=1. Sleep 750M when that app exits. The lid stays "
+                "on Intel — this is not macOS Automatic Graphics Switching.",
+                KEPLER,
+            )
+        )
+        inner_lay.addWidget(
+            _help_block(
+                "STEAM",
+                "Put steam in the box and Run on 750M for native OpenGL titles. "
+                "Most Windows/Proton games use Vulkan, which on this Intel-lid "
+                "boot is Iris Pro — drop the in-game resolution; this panel is "
+                "2880×1800. NVIDIA 470 Vulkan is a different Limine boot.",
                 KEPLER,
             )
         )
@@ -464,6 +555,16 @@ class Plate(QWidget):
                 "Apple GMUX, and the helper refuses them. Escape or the jewel "
                 "closes the plate; ? comes back here.",
                 FAULT,
+            )
+        )
+        inner_lay.addWidget(
+            _help_block(
+                "OMARCHY / MACOS",
+                "Do not run the stock Omarchy ISO against this internal SSD — "
+                "that path wipes the disk. Keep a macOS partition; it is the "
+                "local recovery when Linux blacks the lid. Details: "
+                "docs/graphics/max-value-and-omarchy.md in the RetinaForge repo.",
+                MUTED,
             )
         )
 
@@ -520,6 +621,8 @@ class Plate(QWidget):
             self.err.setText(status.get("error") or "unknown error")
             self.sleep_btn.setEnabled(False)
             self.wake_btn.setEnabled(False)
+            if hasattr(self, "run_btn"):
+                self.run_btn.setEnabled(False)
             if hasattr(self, "now_label"):
                 self.now_label.setText(
                     "Right now: helper failed. Sleep/Wake are blocked until status works again."
@@ -531,15 +634,15 @@ class Plate(QWidget):
         if intel and not dis_on:
             self.title.setText("Lid on Iris Pro")
             self._badge("COOL", IRIS)
-            self.note.setText("750M is asleep. Wake it before prime-run. The panel mux stays on Intel.")
+            self.note.setText("750M is asleep. Run on 750M wakes it, then DRI_PRIME=1. Mux stays on Intel.")
             now = (
                 "Right now: sage / COOL. That is the idle default. "
-                "Do not Wake unless you are about to prime-run an OpenGL app."
+                "Use Run on 750M only when you are about to start an OpenGL app."
             )
         elif intel and dis_on:
             self.title.setText("Lid Intel · 750M awake")
             self._badge("AWAKE", KEPLER)
-            self.note.setText("750M is powered. Use prime-run for OpenGL. Sleep it when idle.")
+            self.note.setText("750M is powered. Run on 750M uses it. Sleep it when that app exits.")
             now = (
                 "Right now: amber / AWAKE. Fine for prime-run. "
                 "Sleep 750M when that app is done so the chassis can cool."
@@ -581,6 +684,8 @@ class Plate(QWidget):
         self.mux.setText(f"{igd}:{status.get('igd')}   {dis}:{status.get('dis')}")
         self.sleep_btn.setEnabled(bool(dis_on) and status.get("product_ok", True))
         self.wake_btn.setEnabled((not dis_on) and status.get("product_ok", True))
+        if hasattr(self, "run_btn"):
+            self.run_btn.setEnabled(bool(intel) and status.get("product_ok", True))
 
     def _badge(self, text: str, color: str) -> None:
         self.badge.setText(text)
@@ -602,10 +707,43 @@ class Plate(QWidget):
         self.show()
         self.raise_()
 
+    def browse_command(self) -> None:
+        path, _filt = QFileDialog.getOpenFileName(
+            self,
+            "Run on 750M",
+            str(Path.home()),
+            "Programs (*.desktop *);;All files (*)",
+        )
+        if not path:
+            return
+        picked = Path(path)
+        if picked.suffix == ".desktop":
+            exec_line = desktop_exec_line(picked)
+            if not exec_line:
+                self.err.setText("no Exec= in that .desktop")
+                return
+            self.cmd_edit.setText(exec_line)
+            return
+        self.cmd_edit.setText(path)
+
+    def remember_command(self, raw: str) -> None:
+        items = [raw] + [item for item in self._prime_history if item != raw]
+        self._prime_history = items[:12]
+        save_prime_history(self._prime_history)
+        self._completer = QCompleter(self._prime_history)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.cmd_edit.setCompleter(self._completer)
+
+    def focus_run(self) -> None:
+        self.show_status()
+        self.cmd_edit.setFocus()
+        self.cmd_edit.selectAll()
+
 
 class Controller:
     def __init__(self) -> None:
         self.busy = False
+        self.status: dict = {}
         self.plate = Plate(self)
         self.tray = QSystemTrayIcon()
         self.tray.setToolTip("RetinaForge 11,3")
@@ -622,6 +760,9 @@ class Controller:
         menu.addAction(open_act)
         menu.addAction(sleep_act)
         menu.addAction(wake_act)
+        run_act = QAction("Run on 750M…", self.tray)
+        run_act.triggered.connect(self.open_run)
+        menu.addAction(run_act)
         help_act = QAction("What is this?", self.tray)
         help_act.triggered.connect(self.open_help)
         menu.addAction(help_act)
@@ -660,6 +801,90 @@ class Controller:
         except Exception:
             traceback.print_exc()
 
+    def open_run(self) -> None:
+        try:
+            self.refresh()
+            if not self.plate.isVisible():
+                self.plate.show_near_cursor()
+            self.plate.focus_run()
+        except Exception:
+            traceback.print_exc()
+
+    def launch_on_750m(self) -> None:
+        if self.busy:
+            return
+        raw = self.plate.cmd_edit.text().strip()
+        if not raw:
+            self.plate.err.setText("Type a command or browse to a binary.")
+            return
+        try:
+            argv = shlex.split(raw)
+        except ValueError as exc:
+            self.plate.err.setText(str(exc))
+            return
+        if not argv:
+            self.plate.err.setText("empty command")
+            return
+        program = argv[0]
+        if program.endswith(".desktop"):
+            parsed = desktop_exec_line(Path(program))
+            if not parsed:
+                self.plate.err.setText("no Exec= in that .desktop")
+                return
+            try:
+                argv = shlex.split(parsed)
+            except ValueError as exc:
+                self.plate.err.setText(str(exc))
+                return
+            program = argv[0]
+        if not os.path.isabs(program):
+            found = shutil.which(program)
+            if not found:
+                self.plate.err.setText(f"not on PATH: {program}")
+                return
+            argv[0] = found
+        elif not os.path.isfile(argv[0]) or not os.access(argv[0], os.X_OK):
+            self.plate.err.setText(f"not executable: {argv[0]}")
+            return
+        if not self.status.get("ok") or not self.status.get("intel_lid"):
+            self.plate.err.setText("Need the Intel lid (i915drmfb) first.")
+            return
+        if not self.status.get("product_ok", True):
+            self.plate.err.setText("writes blocked on this DMI")
+            return
+        if not self.status.get("dis_on"):
+            self.act("dis-on")
+            if not self.status.get("dis_on"):
+                self.plate.err.setText("could not wake the 750M")
+                return
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("DRI_PRIME", "1")
+        wrapper = shutil.which("prime-run")
+        if wrapper:
+            program, args = wrapper, argv
+        else:
+            program, args = argv[0], argv[1:]
+        proc = QProcess()
+        proc.setProgram(program)
+        proc.setArguments(args)
+        proc.setProcessEnvironment(env)
+        proc.setWorkingDirectory(str(Path.home()))
+        result = proc.startDetached()
+        pid = None
+        if isinstance(result, tuple):
+            ok = bool(result[0])
+            if len(result) > 1:
+                pid = result[1]
+        else:
+            ok = bool(result)
+        if not ok:
+            self.plate.err.setText("launch failed")
+            return
+        self.plate.remember_command(raw)
+        extra = f" pid {pid}" if pid else ""
+        self.plate.err.setText("")
+        self.plate.note.setText(f"Started on 750M{extra}. Sleep 750M when that app exits.")
+
     def refresh(self) -> None:
         if self.busy:
             return
@@ -674,6 +899,7 @@ class Controller:
         self.busy = True
         self.plate.sleep_btn.setEnabled(False)
         self.plate.wake_btn.setEnabled(False)
+        self.plate.run_btn.setEnabled(False)
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         QApplication.processEvents()
         try:
@@ -683,6 +909,7 @@ class Controller:
             self.busy = False
 
     def apply(self, status: dict) -> None:
+        self.status = status
         self.plate.apply(status)
         self.tray.setIcon(make_tray_icon(lamp_color(status)))
         if status.get("ok"):

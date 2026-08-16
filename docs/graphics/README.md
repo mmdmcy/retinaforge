@@ -26,6 +26,8 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/source-notes/2026-08-10-edp-handoff-research.md`](../source-notes/2026-08-10-edp-handoff-research.md)
 - **DRI_PRIME nouveau offload (2026-08-16):**
   [`docs/source-notes/2026-08-16-dri-prime-nouveau.md`](../source-notes/2026-08-16-dri-prime-nouveau.md)
+- **Daily use, Steam, Omarchy, keep macOS:**
+  [`max-value-and-omarchy.md`](max-value-and-omarchy.md)
 - Upstream graphics review:
   [`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](../source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md)
 - Windows Intel enumeration probe:
@@ -47,7 +49,7 @@ AHCI/libata patch series even though both tracks share the tree.
 | [`scripts/graphics/retinaforge-i915-ddi-4lanes.py`](../../scripts/graphics/retinaforge-i915-ddi-4lanes.py) | Write Haswell `DDI_A_4_LANES` then load i915 |
 | [`scripts/graphics/retinaforge-keep-display-awake.sh`](../../scripts/graphics/retinaforge-keep-display-awake.sh) | X11 DPMS off using the user auth file |
 | [`scripts/graphics/prime-run`](../../scripts/graphics/prime-run) | `DRI_PRIME=1` wrapper: one OpenGL app on nouveau, Intel keeps the panel |
-| [`apps/mbp-panel/`](../../apps/mbp-panel/README.md) | Tray plate: lid/mux/temps and Sleep/Wake 750M (no mux hops) |
+| [`apps/mbp-panel/`](../../apps/mbp-panel/README.md) | Tray plate: lid/mux/temps, Sleep/Wake, **Run on 750M** (no mux hops) |
 | [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | `extend` or `mirror` |
 | [`scripts/graphics/present-off`](../../scripts/graphics/present-off) | Stop DisplayLink; laptop only |
 

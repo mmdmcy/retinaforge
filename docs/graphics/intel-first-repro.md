@@ -180,24 +180,23 @@ Required on any reinstall:
    ignored. This lab proved **X11**. Hyprland/Wayland is untested here.
 7. `check-intel-first-panel.sh` must pass. PCI presence is not enough.
 
-**Omarchy:** possible later as a **manual** dual-boot (keep macOS; do not use the
-stock ISO against the internal SSD — that path is a dedicated-drive wipe).
-The ISO defaults to LUKS; Omarchy documents `Ctrl+C` at the disk-format
-confirm for an encryption-less ISO install, and a manual Arch install can
-skip LUKS. On this SSD, lab probes showed **ext4-on-dm-crypt** ~1.1 s durable
-sync tails; dm-crypt alone was fast. The working graphics install is
-unencrypted ext4. Skipping LUKS is reasonable here; it does **not** skip the
-graphics stack (UKI / `force_igd` / DDI poke). Omarchy is Hyprland/Wayland
-and stock Arch kernels may lack CachyOS `force_igd`. Porting is a project,
-not a wipe.
+**Omarchy:** later as a **manual** dual-boot only. Do **not** use the stock
+ISO against the internal SSD as a dedicated-drive wipe. Quattro’s “Free
+space” dual-boot is documented for Windows-style leftover space; shrink
+**APFS from macOS**, never from Linux. Keep a macOS partition (recovery
+when the lid goes black). Skip LUKS on this SSD. Port `force_igd` + DDI
+poke; Wayland is untested. Written down:
+[`max-value-and-omarchy.md`](max-value-and-omarchy.md).
 
 ## Daily controls (tray plate)
 
 A small taskbar jewel lives in [`apps/mbp-panel/`](../../apps/mbp-panel/README.md).
 It shows whether the lid is on `i915`, whether the unused 750M is powered,
 and package/fan readings. Sleep/Wake write switcheroo `OFF`/`ON` only.
-They do not flip the mux. The **?** on the plate is the reminder: sage/idle
-is the default; Wake only for `prime-run`; NVIDIA 470 is a different boot.
+They do not flip the mux. The **?** on the plate is the reminder; **Run on
+750M** wakes the chip and starts `DRI_PRIME=1` so you do not memorize
+`prime-run`. Long form (Steam, Omarchy, keep macOS):
+[`max-value-and-omarchy.md`](max-value-and-omarchy.md).
 
 ```bash
 sudo pacman -S --needed python-pyqt6 ttf-ibm-plex polkit
