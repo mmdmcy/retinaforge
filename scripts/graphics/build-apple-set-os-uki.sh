@@ -16,7 +16,19 @@ KNAME="$(cat "/usr/lib/modules/${KVER}/pkgbase" 2>/dev/null || echo linux)"
 UKI_DIR="/boot/EFI/Linux"
 UKI_PATH="${UKI_PATH:-${UKI_DIR}/cachyos-apple-set-os.efi}"
 MODPROBE_DST="/etc/modprobe.d/retinaforge-nvidia-off.conf"
-MKINIT_CFG="${root}/scripts/graphics/mkinitcpio-intel-uki.conf"
+INTEL_UKI_PROFILE="${INTEL_UKI_PROFILE:-force_igd}"
+case "$INTEL_UKI_PROFILE" in
+force_igd)
+	MKINIT_CFG="${root}/scripts/graphics/mkinitcpio-intel-uki.conf"
+	;;
+handoff)
+	MKINIT_CFG="${root}/scripts/graphics/mkinitcpio-intel-handoff-uki.conf"
+	;;
+*)
+	echo "unknown INTEL_UKI_PROFILE=${INTEL_UKI_PROFILE} (force_igd|handoff)" >&2
+	exit 1
+	;;
+esac
 
 if ((EUID != 0)); then
 	echo "run as root: sudo $0" >&2
@@ -55,18 +67,30 @@ fi
 if [[ "$CMDLINE" != *plymouth.enable=0* ]]; then
 	CMDLINE+=" plymouth.enable=0 systemd.show_status=true loglevel=7"
 fi
-if [[ "$CMDLINE" != *apple_gmux.force_igd* ]]; then
-	CMDLINE+=" apple_gmux.force_igd=1"
-fi
-if [[ "$CMDLINE" != *i915.enable_dc=0* ]]; then
-	CMDLINE+=" i915.enable_dc=0"
-fi
+case "$INTEL_UKI_PROFILE" in
+force_igd)
+	if [[ "$CMDLINE" != *apple_gmux.force_igd* ]]; then
+		CMDLINE+=" apple_gmux.force_igd=1"
+	fi
+	if [[ "$CMDLINE" != *i915.enable_dc=0* ]]; then
+		CMDLINE+=" i915.enable_dc=0"
+	fi
+	;;
+handoff)
+	CMDLINE="${CMDLINE//apple_gmux.force_igd=1/}"
+	CMDLINE="${CMDLINE//apple_gmux.force_igd=0/}"
+	if [[ "$CMDLINE" != *modprobe.blacklist=i915* ]]; then
+		CMDLINE+=" modprobe.blacklist=i915"
+	fi
+	;;
+esac
 
 CMDLINE_FILE="$(mktemp)"
 trap 'rm -f "$CMDLINE_FILE"' EXIT
 printf '%s\n' "$CMDLINE" >"$CMDLINE_FILE"
 
 echo "==> kernel: ${KVER} (${KNAME})"
+echo "==> profile: ${INTEL_UKI_PROFILE}"
 echo "==> cmdline: ${CMDLINE}"
 echo "==> UKI: ${UKI_PATH}"
 

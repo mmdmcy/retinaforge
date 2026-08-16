@@ -179,6 +179,15 @@ The 2026-08-01 success was **not** reproduced by repeating Steps A–B alone
 link-info errors despite UKI Set OS enumerating the iGPU. Do not claim a
 working Intel desktop from prefs readback or iGPU PCI presence alone.
 
+## Negative retest of the original UKI (2026-08-13)
+
+Booting a byte-identical copy of the 08-01 success UKI after verified macOS
+Intel NVRAM and a cold shutdown still produced `failed to retrieve link
+info` / no `i915drmfb`. Do not repeat that pair as the next experiment.
+Daily Linux should keep the proprietary NVIDIA LTS entry as Limine default
+until the check script passes. See
+[`docs/source-notes/2026-08-13-historical-uki-retest.md`](../source-notes/2026-08-13-historical-uki-retest.md).
+
 ## Distro migration (CachyOS → Debian/Fedora/…)
 
 Graphics success here is **not tied to CachyOS**. When reinstalling:

@@ -435,6 +435,34 @@ Debian (trixie 6.12 / bookworm 6.1+backports) or Linux Mint 22.x
 Details:
 [`source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](source-notes/2026-08-06-intel-panel-investigation-and-migration.md).
 
+### `force_igd` connected-eDP / zero DRM modes (2026-08-10)
+
+Boot-time `apple_gmux.force_igd=1` on the Intel UKI switched the mux to IGD
+and produced a **connected** i915 eDP with readable 2880×1800 EDID. The
+ghost-panel `failed to retrieve link info` line was gone. Kernel DRM still
+reported **0 modes** on that connector; Xorg then failed `failed to set
+mode`. Indexed GMUX (`NEEDS_EDP_CONFIG`) may need DIS-side link training
+before IGD; a DIS-first handoff profile trained nouveau modes and reached
+`IGD:+` but i915 still failed link-info after the switch. That handoff
+must not be the default boot (it can hang the machine before SSH).
+
+Details:
+[`source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md),
+[`source-notes/2026-08-10-edp-handoff-research.md`](source-notes/2026-08-10-edp-handoff-research.md).
+
+### Historical UKI retest (2026-08-13)
+
+A byte-identical copy of the 2026-08-01 success UKI, booted after verified
+macOS Intel `gpu-policy` / `gpu-power-prefs` and a cold shutdown, **did not**
+restore `i915drmfb`. `i915` loaded and then disabled eDP for link-info
+failure; `simpledrm` stayed primary. Daily Linux was restored to LTS +
+proprietary NVIDIA as the Limine default. The 08-01 success remains the
+single unreproduced positive; repeating that exact pair is not the next
+experiment.
+
+Details:
+[`source-notes/2026-08-13-historical-uki-retest.md`](source-notes/2026-08-13-historical-uki-retest.md).
+
 ### External displays
 
 USB **DisplayLink** dual 1080p outputs worked with the GT 750M left off.

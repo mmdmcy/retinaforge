@@ -1,6 +1,44 @@
 # Next Session Handoff
 
-Last updated: 2026-08-10 (force_igd breakthrough, intel-daily stack in-tree)
+Last updated: 2026-08-16 — **session wrapped for GitHub / other-device resume**
+
+## Session wrap (2026-08-16)
+
+OpenCode GPT-5.6 work on this tree from 2026-08-10 through 2026-08-13 is now
+in git. Goal remains **Intel i915 desktop on the internal panel**. A sale /
+triple-boot listing detour on 2026-08-13 was abandoned the same day; keep the
+machine as the lab.
+
+**Left on disk (Linux, last confirmed 2026-08-13 evening):**
+
+- Limine **default** = `RetinaForge NVIDIA LTS` (`6.18.40-1-cachyos-lts`,
+  NVIDIA 470, Plasma X11, panel 2880×1800). This is the SSH recovery desktop.
+- Manual menu: `RetinaForge Intel historical baseline` (byte copy of the
+  08-01 success UKI) and the newer `force_igd` Intel UKI. Neither is default.
+- 2026-08-13 historical-UKI retest **failed** even after verified macOS
+  `gpu-policy=%01` + Intel `gpu-power-prefs` + cold off. See
+  `docs/source-notes/2026-08-13-historical-uki-retest.md`.
+- eDP-handoff profile is **opt-in only** and must stay off the default boot
+  (wedges SSH). `enable-intel-daily.sh` disables that unit.
+
+**Reachability at wrap (2026-08-16):** `mbp113-linux` last seen ~2 days ago
+on the tailnet; `mbp113-macos` LAN SSH timed out. Assume the lab laptop is
+powered off or asleep until a physical power-on. Do not reboot it blindly
+from another device.
+
+| Doc | Contents |
+| --- | --- |
+| `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md` | `force_igd` breakthrough, 0 DRM modes, Xorg fail |
+| `docs/source-notes/2026-08-10-edp-handoff-research.md` | DIS-first handoff v1–v3, `NEEDS_EDP_CONFIG`, boot wedge |
+| `docs/source-notes/2026-08-13-historical-uki-retest.md` | 08-01 UKI + verified NVRAM still ghost-panel |
+| `scripts/graphics/enable-intel-daily.sh` | Default Intel path (`force_igd`; handoff off) |
+| `scripts/graphics/enable-intel-edp-handoff.sh` | Opt-in handoff profile only |
+| `scripts/graphics/retinaforge-keep-display-awake.sh` | X11 DPMS helper (user `XAUTHORITY`, not SDDM’s) |
+
+**Resume (one variable):** power on → confirm NVIDIA LTS still default →
+**do not** repeat historical UKI + NVRAM. Next Intel work is the `force_igd`
+0-modes gap, or a user-present distro/kernel isolation. Keep NVIDIA LTS as
+fallback.
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -75,6 +113,41 @@ If Intel experiments leave no local display but SSH still works:
   `force_igd` bypasses GMUX but prefs may still matter for full modeset.
 - Full record: `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`.
 - Do **not** re-enable `retinaforge-nouveau.service` on nvidia-off path.
+
+**eDP handoff profile (2026-08-10 evening, new):**
+
+- New scripts: `enable-intel-edp-handoff.sh`, `gmux-edp-handoff.sh`,
+  `mkinitcpio-intel-handoff-uki.conf`, `INTEL_UKI_PROFILE=handoff` in UKI build.
+- Theory: indexed GMUX `NEEDS_EDP_CONFIG` — nouveau must train eDP on DIS before
+  IGD switch; `force_igd` skips that step.
+- **v1/v2 boot results:** nouveau gets 10 DRM modes on DIS; switcheroo reaches
+  `IGD:+`; i915 still `failed to retrieve link info` / 0 modes. Panel stayed on
+  `nouveaudrmfb` in v2.
+- **v3 (disable_display handoff):** script updated but deploy/reboot lost SSH
+  (`mbp113-linux` unreachable via Tailscale after reboot ~19:54 UTC). Machine may
+  need manual power-on or hung on boot — check when back on LAN.
+- **2026-08-10 23:00:** Handoff **removed** from default boot (wedges SSH). Stable
+  session: `enable-intel-daily.sh` + `force_igd` UKI rebuilt on disk
+  (`apple_gmux.force_igd=1` confirmed in EFI image). Current live boot still old
+  handoff cmdline until next reboot; panel on **nouveau** (11×2880×1800 modes),
+  i915 inactive with `failed to retrieve link info` when loaded on DIS.
+- Research doc: `docs/source-notes/2026-08-10-edp-handoff-research.md`.
+- Revert to force_igd profile: `enable-intel-daily.sh` +
+  `INTEL_UKI_PROFILE=force_igd build-apple-set-os-uki.sh`.
+
+**Historical UKI retest (2026-08-13, negative):**
+
+- Daily Linux restored to NVIDIA LTS + Plasma X11 before the test.
+- Historical 08-01 UKI installed as a **manual** Limine entry
+  (`cachyos-intel-historical-baseline.efi`, SHA-256
+  `24e1fca10c8a7237b8e83fc74de22bc0be3d76bb17366d5329f78c823fcc0dea`).
+- macOS wrote and read back `gpu-policy=%01` and Intel `gpu-power-prefs`,
+  then cold off. Historical UKI boot: `i915` loaded, eDP disabled for
+  link-info, `simpledrm` primary, NVIDIA loaded anyway. SSH survived.
+- Restored NVIDIA LTS default. Full record:
+  `docs/source-notes/2026-08-13-historical-uki-retest.md`.
+- KDE DPMS needed a keep-awake helper using the user X auth file; a later
+  full-machine drop-off was likely **sleep**, not panel blanking.
 
 ## Graphics — current state (2026-08-07)
 
@@ -171,25 +244,30 @@ optional always-on/lid policy, display manager/autologin, toolkit scale.
 Use the existing lab SSH key material and host known_hosts files already
 configured for this workspace. Prefer the fleet names in
 [`docs/fleet-naming.md`](fleet-naming.md): `neo` (controller Mac),
-`mbp113-linux` (CachyOS lab OS), `mbp113-macos` (Big Sur on the same
-hardware). The agent may reboot the Linux lab OS and reconnect when that OS
-is the running system.
+`mini` and `Sparta` (additional controllers), `mbp113-linux` (CachyOS lab
+OS), `mbp113-macos` (Big Sur on the same hardware). Only one lab OS is
+reachable at a time. Linux is Tailscale MagicDNS; macOS SSH in this fleet
+is the LAN/mDNS alias. The agent may reboot the Linux lab OS and reconnect
+when that OS is the running system. Do not copy key material into git.
 
 ## Next experiments (pick one; do not combine)
 
-0. **Intel daily desktop (primary goal)** — macOS `gpu-policy %01` + cold off →
-   UKI with `apple_gmux.force_igd=1` (`enable-intel-daily.sh` +
-   `build-apple-set-os-uki.sh`) → fix kernel DRM modes (0 modes on eDP-1).
-0b. **Boot automation** — `limine-set-default-uki.sh` (flat entry 1, 5s).
+0. **Intel daily desktop (primary goal)** — `force_igd` UKI path already
+   gets eDP **connected** with 0 DRM modes. Next: one-at-a-time i915 cmdline
+   / PC8 / initramfs-firmware diff. Keep NVIDIA LTS as Limine default.
+0b. **Boot automation** — `limine-set-default-uki.sh` (flat entry 1, 5s) only
+    after `check-intel-first-panel.sh` passes.
 1. ~~UKI nvidia-off rebuild~~ — **DONE 2026-08-10** (`build-apple-set-os-uki.sh`).
 2. ~~In-tree verify script~~ — **DONE** (`verify-intel-uki-boot.sh`).
-3. **DRM modes on eDP-1** — PC8 warnings, macOS+%01+force_igd strict pairing,
-   diff vs 08-01 UKI backup.
+3. **DRM modes on eDP-1** — remaining `force_igd` gap (see 08-10 UKI note).
 4. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative** (see 08-07 note).
-5. ~~Pin the 08-01 CachyOS kernel~~ — **DONE 2026-08-07**.
-6. Suspend/resume **after** Intel panel ownership is re-proven.
+5. ~~Pin / retest the 08-01 UKI~~ — **RUN 2026-08-13, negative** (see 08-13 note).
+6. Suspend/resume **after** Intel panel ownership is re-proven. Current NVIDIA
+   session can still sleep the whole machine; that is not an Intel experiment.
 7. Native GT 750M outputs (separate from DisplayLink).
 8. Storage flush-pattern follow-up only with an explicit checkpoint.
+9. ~~Indexed eDP handoff as default boot~~ — **tried 2026-08-10, do not
+   re-enable on default** (SSH wedge). Opt-in profile only.
 
 Default when unsure: leave APFS alone; read the 2026-08-06 investigation note
 before changing NVRAM or the bootloader.

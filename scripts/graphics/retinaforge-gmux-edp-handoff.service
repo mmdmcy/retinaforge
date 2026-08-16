@@ -1,0 +1,16 @@
+[Unit]
+Description=RetinaForge indexed GMUX eDP handoff (nouveau train, switch IGD)
+DefaultDependencies=no
+After=systemd-modules-load.service local-fs.target
+Before=display-manager.service
+ConditionPathExists=/sys/module/apple_gmux
+ConditionPathExists=!/etc/retinaforge/skip-edp-handoff
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=20
+ExecStart=/usr/local/sbin/gmux-edp-handoff.sh
+
+[Install]
+WantedBy=multi-user.target

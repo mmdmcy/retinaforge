@@ -14,6 +14,12 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md)
 - **Investigation + Debian/Mint migration plan (2026-08-06):**
   [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](../source-notes/2026-08-06-intel-panel-investigation-and-migration.md)
+- **`force_igd` connected eDP, 0 DRM modes (2026-08-10):**
+  [`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](../source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md)
+- **Indexed eDP handoff experiments (2026-08-10, not default boot):**
+  [`docs/source-notes/2026-08-10-edp-handoff-research.md`](../source-notes/2026-08-10-edp-handoff-research.md)
+- **Historical 08-01 UKI retest (2026-08-13, negative):**
+  [`docs/source-notes/2026-08-13-historical-uki-retest.md`](../source-notes/2026-08-13-historical-uki-retest.md)
 - Upstream graphics review:
   [`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](../source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md)
 - Windows Intel enumeration probe:
@@ -31,6 +37,8 @@ AHCI/libata patch series even though both tracks share the tree.
 | --- | --- |
 | [`macos/scripts/set-gpu-power-prefs-intel.sh`](../../macos/scripts/set-gpu-power-prefs-intel.sh) | macOS: set Intel `gpu-power-prefs` |
 | [`scripts/graphics/check-intel-first-panel.sh`](../../scripts/graphics/check-intel-first-panel.sh) | Linux: read-only verify Intel panel path |
+| [`scripts/graphics/enable-intel-daily.sh`](../../scripts/graphics/enable-intel-daily.sh) | Install `force_igd` Intel UKI path; keeps eDP-handoff **off** |
+| [`scripts/graphics/retinaforge-keep-display-awake.sh`](../../scripts/graphics/retinaforge-keep-display-awake.sh) | X11 DPMS off using the user auth file |
 | [`scripts/graphics/present-on`](../../scripts/graphics/present-on) | Start DisplayLink + layout (occasional) |
 | [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | `extend` or `mirror` |
 | [`scripts/graphics/present-off`](../../scripts/graphics/present-off) | Stop DisplayLink; laptop only |

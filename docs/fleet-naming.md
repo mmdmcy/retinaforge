@@ -7,8 +7,15 @@ machine (`MacBookPro11,3`) that RetinaForge targets.
 | Short name | Hardware | Typical OS | Role |
 | --- | --- | --- | --- |
 | `neo` | MacBook Neo | macOS | Daily controller / fleet operator Mac |
+| `mini` | LinuxMice mini | Linux | Additional controller; same `mbp113-*` SSH aliases |
+| `Sparta` | Windows workstation | Windows | Additional controller; same `mbp113-*` SSH aliases |
 | `mbp113-linux` | MacBook Pro 11,3 Retina (Late 2013) | CachyOS Linux | RetinaForge lab OS; **Intel i915 desktop target** |
 | `mbp113-macos` | Same `MacBookPro11,3` unit | macOS Big Sur | Recovery reference and Intel-panel experiments |
+
+Only one of `mbp113-linux` / `mbp113-macos` is reachable at a time (dual-boot).
+Controller hosts should share the same SSH `Host` aliases so research can
+continue from `neo`, `mini`, or `Sparta`. Keep real `HostName`, usernames, and
+keys in local `~/.ssh/config` only.
 
 ## Legacy aliases
 
