@@ -196,7 +196,9 @@ and package/fan readings. Sleep/Wake write switcheroo `OFF`/`ON` only.
 They do not flip the mux. The **?** on the plate is the reminder; **Run on
 750M** wakes the chip and starts `DRI_PRIME=1` so you do not memorize
 `prime-run`. Long form (Steam, Omarchy, keep macOS):
-[`max-value-and-omarchy.md`](max-value-and-omarchy.md).
+[`max-value-and-omarchy.md`](max-value-and-omarchy.md). Named OpenGL
+titles and why 2880×1800 exists:
+[`gaming-and-retina.md`](gaming-and-retina.md).
 
 ```bash
 sudo pacman -S --needed python-pyqt6 ttf-ibm-plex polkit

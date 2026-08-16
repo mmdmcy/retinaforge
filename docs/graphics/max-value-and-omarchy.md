@@ -43,7 +43,9 @@ You do **not** need a reboot to use the 2 GB for OpenGL offload.
 | “I want NVIDIA Vulkan / 470” | 750M via proprietary driver | Reboot **NVIDIA LTS** Limine recovery. Different driver world; cannot share the chip with `nouveau` |
 
 Do not expect 2026 settings. Do expect that dropping to 1920×1200 or
-1440×900 is how this panel stays playable.
+1440×900 is how this panel stays playable. Why the panel is 2880×1800
+anyway, and a named OpenGL list:
+[`gaming-and-retina.md`](gaming-and-retina.md).
 
 ## NVIDIA 470 reboot (only this)
 

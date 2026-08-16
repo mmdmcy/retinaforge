@@ -28,6 +28,8 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/source-notes/2026-08-16-dri-prime-nouveau.md`](../source-notes/2026-08-16-dri-prime-nouveau.md)
 - **Daily use, Steam, Omarchy, keep macOS:**
   [`max-value-and-omarchy.md`](max-value-and-omarchy.md)
+- **Gaming vs Retina (OpenGL list, why 2880×1800 exists):**
+  [`gaming-and-retina.md`](gaming-and-retina.md)
 - Upstream graphics review:
   [`docs/source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md`](../source-notes/2026-07-24-macbookpro11-3-graphics-upstream.md)
 - Windows Intel enumeration probe:
