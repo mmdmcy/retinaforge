@@ -204,7 +204,9 @@ may need a newer kernel package for the same comfort. Validate with
 
 ## What this recipe does *not* claim
 
-- macOS-equivalent automatic graphics switching  
-- GMUX physical rail-off proof beyond switcheroo `Off`  
-- Nouveau modeset or CUDA bring-up  
+- macOS-equivalent automatic graphics switching — **why** is written in
+  [`docs/graphics/why-not-macos-ags.md`](why-not-macos-ags.md); this is an
+  indexed GMUX / eDP-handoff limit, not a missing toggle
+- GMUX physical rail-off proof beyond switcheroo `Off`
+- Nouveau modeset or CUDA bring-up
 - Fixing Apple AHCI durable-write latency (`144d:1600`)

@@ -8,6 +8,8 @@ AHCI/libata patch series even though both tracks share the tree.
 
 - **Reproduce Intel-first panel (how-to + scripts):**
   [`docs/graphics/intel-first-repro.md`](intel-first-repro.md)
+- **Why Linux cannot copy Big Sur GPU switching:**
+  [`docs/graphics/why-not-macos-ags.md`](why-not-macos-ags.md)
 - **Latest positive physical validation (2026-08-01):**
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](../source-notes/2026-08-01-intel-panel-and-display-path.md)
 - **Failed same-recipe retest (2026-08-05):**

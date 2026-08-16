@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Last updated: 2026-08-16 — **session wrapped for GitHub / other-device resume**
+Last updated: 2026-08-16 — **session wrapped; AGS-vs-Linux written down**
 
 ## Session wrap (2026-08-16)
 
@@ -31,6 +31,7 @@ from another device.
 | `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md` | `force_igd` breakthrough, 0 DRM modes, Xorg fail |
 | `docs/source-notes/2026-08-10-edp-handoff-research.md` | DIS-first handoff v1–v3, `NEEDS_EDP_CONFIG`, boot wedge |
 | `docs/source-notes/2026-08-13-historical-uki-retest.md` | 08-01 UKI + verified NVRAM still ghost-panel |
+| `docs/graphics/why-not-macos-ags.md` | Why Linux cannot copy Big Sur AGS on this GMUX |
 | `scripts/graphics/enable-intel-daily.sh` | Default Intel path (`force_igd`; handoff off) |
 | `scripts/graphics/enable-intel-edp-handoff.sh` | Opt-in handoff profile only |
 | `scripts/graphics/retinaforge-keep-display-awake.sh` | X11 DPMS helper (user `XAUTHORITY`, not SDDM’s) |
@@ -38,7 +39,9 @@ from another device.
 **Resume (one variable):** power on → confirm NVIDIA LTS still default →
 **do not** repeat historical UKI + NVRAM. Next Intel work is the `force_igd`
 0-modes gap, or a user-present distro/kernel isolation. Keep NVIDIA LTS as
-fallback.
+fallback. Do **not** start a macOS-style dual-GPU switching project; that is
+out of scope until Intel panel ownership is repeatable. Why:
+[`docs/graphics/why-not-macos-ags.md`](graphics/why-not-macos-ags.md).
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not

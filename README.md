@@ -24,7 +24,7 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux Intel-first graphics / GMUX | **Active** — `force_igd` opens IGD/eDP but DRM modes stay 0; 08-01 UKI retest still negative (2026-08-13) | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/source-notes/2026-08-13-historical-uki-retest.md`](docs/source-notes/2026-08-13-historical-uki-retest.md) |
+| Linux Intel-first graphics / GMUX | **Active** — `force_igd` opens IGD/eDP but DRM modes stay 0; 08-01 UKI retest still negative (2026-08-13). Big Sur–style switching is not a Linux target on this mux. | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/graphics/why-not-macos-ags.md`](docs/graphics/why-not-macos-ags.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs

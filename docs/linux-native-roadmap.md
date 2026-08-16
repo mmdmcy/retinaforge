@@ -110,7 +110,8 @@ Remaining graphics gates (still open):
 - measured discrete rail-off vs switcheroo `OFF` only;
 - suspend/resume with Intel panel ownership;
 - native GT 750M external outputs (separate from USB DisplayLink);
-- no claim of macOS-equivalent automatic switching.
+- no claim of macOS-equivalent automatic switching (see
+  [`docs/graphics/why-not-macos-ags.md`](graphics/why-not-macos-ags.md)).
 
 Host-side UKI/Apple Set OS design notes remain in the 2026-07-24 graphics
 source note. Do not reopen live GMUX forcing after black-screen incidents.

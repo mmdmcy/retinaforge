@@ -495,6 +495,14 @@ readback failed). See `docs/graphics/windows-intel-probe.md`.
 Storage remains a separate track: legacy INTx long flushes and the hard stop
 on writable MSI+NCQ are unchanged by these graphics results.
 
+### Why not Big Sur–style GPU switching
+
+The internal panel is behind an indexed Apple GMUX (`NEEDS_EDP_CONFIG`).
+Linux cannot copy Automatic Graphics Switching: firmware picks `DIS` for
+non-macOS boots, proprietary NVIDIA 470 is not a vga_switcheroo client, and
+nouveau→i915 eDP handoff did not complete in lab tests. Full argument:
+[`graphics/why-not-macos-ags.md`](graphics/why-not-macos-ags.md).
+
 ## Contribution Boundary
 
 Storage, Apple ACPI, and NVIDIA/Nouveau/GMUX are separate upstream tracks. A
