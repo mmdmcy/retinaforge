@@ -463,6 +463,27 @@ experiment.
 Details:
 [`source-notes/2026-08-13-historical-uki-retest.md`](source-notes/2026-08-13-historical-uki-retest.md).
 
+### Repeatable Intel panel path via DDI A 4 lanes (2026-08-16)
+
+The 0-modes gap was Haswell `DDI_BUF_CTL_A` lacking `DDI_A_4_LANES` after a
+DIS-first firmware boot. Panel DPCD is 4-lane HBR; i915 used 2 lanes and
+rejected 2880×1800 as `CLOCK_HIGH`. Setting bit 4 then loading i915 produces
+`i915drmfb`, kernel mode 2880×1800, and Intel modesetting Xorg. Persisted
+across a UKI reboot with i915 blacklisted until the poke. Check scripts
+passed.
+
+Details:
+[`source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](source-notes/2026-08-16-hsw-ddi-a-4-lanes.md).
+
+### DRI_PRIME OpenGL offload to nouveau (2026-08-16)
+
+With Intel already owning the lid, `DRI_PRIME=1` ran OpenGL on nouveau NVE7
+(GT 750M) without moving the GMUX. Vulkan stayed on Intel. This is not Big
+Sur AGS.
+
+Details:
+[`source-notes/2026-08-16-dri-prime-nouveau.md`](source-notes/2026-08-16-dri-prime-nouveau.md).
+
 ### External displays
 
 USB **DisplayLink** dual 1080p outputs worked with the GT 750M left off.

@@ -29,3 +29,12 @@ the flush-reg-stack appliance. It samples AHCI host/port registers around
 outstanding `FLUSH CACHE EXT` so long post-issue delays can be classified as
 PxCI-held versus PxCI-cleared-early. It does not change issue or completion
 policy and must not be treated as a performance fix.
+
+`0003-i915-mbp11-3-ddi-a-4-lanes.patch` is a DMI-scoped sketch for
+`intel_ddi_a_force_4_lanes()` on `MacBookPro11,3`. Apple EFI leaves
+`DDI_A_4_LANES` unset when Linux boots with the mux on DIS, so stock i915
+treats PORT_A as 2-lane and rejects 2880×1800 (`CLOCK_HIGH`). The lab daily
+path is the userspace MMIO poke in `scripts/graphics/retinaforge-i915-ddi-4lanes.py`;
+this patch is the kernel-shaped equivalent and has not been rebuilt or booted
+yet. Add `#include <linux/dmi.h>` if the target `intel_ddi.c` does not already
+pull it in. Never mix this with writable MSI+NCQ storage boots.

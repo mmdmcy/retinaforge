@@ -1,0 +1,17 @@
+[Unit]
+Description=RetinaForge: force Haswell DDI A 4 lanes before i915
+DefaultDependencies=no
+After=systemd-modules-load.service sysinit.target
+Before=display-manager.service sddm.service
+ConditionKernelCommandLine=apple_gmux.force_igd=1
+ConditionPathExists=/sys/bus/pci/devices/0000:00:02.0/resource0
+ConditionPathExists=!/etc/retinaforge/skip-ddi-4lanes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=40
+ExecStart=/usr/bin/python3 /usr/local/sbin/retinaforge-i915-ddi-4lanes.py
+
+[Install]
+WantedBy=multi-user.target

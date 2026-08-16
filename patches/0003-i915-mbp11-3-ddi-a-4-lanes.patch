@@ -1,0 +1,21 @@
+diff --git a/drivers/gpu/drm/i915/display/intel_ddi.c b/drivers/gpu/drm/i915/display/intel_ddi.c
+index 000000000000..111111111111 100644
+--- a/drivers/gpu/drm/i915/display/intel_ddi.c
++++ b/drivers/gpu/drm/i915/display/intel_ddi.c
+@@ -4825,6 +4825,16 @@ static bool intel_ddi_a_force_4_lanes(struct intel_digital_port *dig_port)
+ 	 * supported configuration
+ 	 */
+ 	if (display->platform.geminilake || display->platform.broxton)
+ 		return true;
+ 
++	/*
++	 * MacBookPro11,3: Apple EFI starts Linux with the panel mux on the
++	 * discrete GPU, so Intel GOP never sets DDI_A_4_LANES. The internal
++	 * eDP DPCD is 4-lane HBR; two-lane HBR rejects 2880x1800@60 as
++	 * CLOCK_HIGH. Same firmware class as the BXT/GLK override above.
++	 */
++	if (dmi_match(DMI_PRODUCT_NAME, "MacBookPro11,3"))
++		return true;
++
+ 	return false;
+ }

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run one OpenGL client on nouveau while i915 owns the internal panel.
+# Requires the Intel UKI path (force_igd + DDI 4-lane poke) and nouveau.
+# This is DRI_PRIME offload, not Apple GMUX / Big Sur AGS.
+# See docs/source-notes/2026-08-16-dri-prime-nouveau.md
+exec env DRI_PRIME=1 "$@"

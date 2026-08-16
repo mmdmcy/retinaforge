@@ -1,212 +1,214 @@
 # Intel-first Linux panel reproduction — MacBookPro11,3
 
-This is a **distro-agnostic** cook-book for getting the internal Retina panel
-owned by Intel `i915` on `MacBookPro11,3` (Iris Pro `8086:0d26` + GT 750M
-`10de:0fe9` + Apple GMUX). It records what this workbench verified on
-2026-08-01 and how someone else can repeat the path.
+**What works today (verified 2026-08-16, survived a UKI reboot):**
+Intel `i915` owns the internal Retina panel at 2880×1800 (`i915drmfb`),
+Plasma X11 on Iris Pro. Optional: one OpenGL app on the GT 750M via
+`DRI_PRIME=1` without moving the GMUX.
 
-Evidence write-up:
-[`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](../source-notes/2026-08-01-intel-panel-and-display-path.md).
+This is a cook-book for `MacBookPro11,3` (Iris Pro `8086:0d26` + GT 750M
+`10de:0fe9` + indexed Apple GMUX 4.0.8). Do not generalize to other
+`MacBookPro11,x` machines.
 
-The lab distro happened to be CachyOS + Limine. **Debian, Fedora, Arch, etc.
-are fine** if they can boot a kernel through the **EFI stub** (UKI or equivalent)
-so upstream `apple_set_os()` runs, and the kernel is new enough to include
-Apple product support for this model (see upstream commit `71e49eccdca6` and
-later product-name fallback). Prefer a current Fedora or Debian *testing*/backports
-kernel over a very old stable if Set OS / i915 on dual-GPU Macs misbehave.
+The 2026-08-01 `i915drmfb` boot is **historical only**. Repeating macOS
+NVRAM + the old UKI did **not** reproduce it (2026-08-05, 2026-08-13).
+The repeatable mechanism is below, not `%01` plus luck.
 
-## Why this is fiddly
+## Two separate problems (both required)
 
-Apple EFI firmware does not treat Linux like a generic PC. Without Apple Set OS,
-the iGPU often never enumerates. Panel selection also depends on the Apple
-`gpu-power-prefs` EFI variable, which this workbench could only write reliably
-**from macOS**. Live GMUX forcing from Linux caused black screens and is not
-part of the recipe.
+Firmware always starts a Linux UKI boot with the panel mux on **DIS**.
 
-## One-time prerequisites
+1. **Mux.** Without a boot-time IGD switch, i915 sees a ghost eDP
+   (`failed to retrieve link info`). Fix: `apple_gmux.force_igd=1` on a
+   **UKI / EFI-stub** boot so `apple_set_os()` has enumerated the iGPU.
+   This parameter is a **CachyOS `apple-gmux` patch**, not mainline.
+2. **Lanes.** After the mux is on IGD, eDP is **connected** with a valid
+   2880×1800 EDID, but DRM advertises **0 modes**. Haswell
+   `intel_ddi_max_lanes()` sees `DDI_BUF_CTL_A` without `DDI_A_4_LANES`
+   (bit 4, MMIO `0x64000`). Intel GOP never sets that bit when the lid
+   was not on IGD at firmware init. i915 then treats PORT_A as **2-lane**;
+   2-lane HBR cannot carry 337.75 MHz, so `mode_valid` is `CLOCK_HIGH`.
+   Fix: set bit 4 **before** i915’s first probe, then load i915.
 
-1. Keep a bootable macOS install (recovery reference).
-2. Install Linux on a separate partition (plain ext4 is enough for graphics lab
-   work). Do not mix this procedure with writable MSI+NCQ storage experiments
-   on the Apple AHCI `144d:1600` controller.
-3. Install a bootloader entry that chainloads a **UKI** or other EFI application
-   that enters the kernel via the **EFI stub**.  
-   **Not sufficient:** Limine/GRUB `protocol: linux` / plain `linux`+`initrd`
-   without EFI-stub entry — on this machine that path skipped Apple Set OS.
-4. Kernel modules: `i915`, `apple-gmux`, Nouveau or other NVIDIA client optional
-   for switcheroo.
+Either fix alone is insufficient. `force_igd` without the lane poke is
+the 2026-08-10 “connected, 0 modes, Xorg no screens” state.
 
-### Example Limine fragment (placeholders only)
+Evidence:
+[`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](../source-notes/2026-08-16-hsw-ddi-a-4-lanes.md).
 
-```text
-/+Linux Intel probe
-comment: UKI via EFI stub for apple_set_os
-  //uki
-  protocol: efi
-  path: boot():/EFI/Linux/your-uki.efi
-```
+## Lab install (CachyOS + Limine, this workbench)
 
-Set that entry as default once verified. Keep a nomodeset / stock entry as
-fallback.
+Keep **macOS** on APFS. Do not mix this with writable MSI+NCQ storage
+boots. Do not run a distro ISO that wipes the whole internal disk
+(Omarchy’s stock installer does that; see below).
 
-## Step A — macOS: prefer Intel
-
-From Terminal on macOS:
-
-```bash
-chmod +x macos/scripts/set-gpu-power-prefs-intel.sh
-./macos/scripts/set-gpu-power-prefs-intel.sh
-```
-
-Or manually:
-
-```bash
-sudo nvram fa4ce28d-b62f-4c99-9cc3-6815686e30f9:gpu-power-prefs=%01%00%00%00
-sudo nvram fa4ce28d-b62f-4c99-9cc3-6815686e30f9:gpu-power-prefs
-```
-
-- Intel lab value: `%01%00%00%00`
-- Discrete / macOS-oriented value: `%00%00%00%00`
-
-On this workbench + Big Sur, also set **`gpu-policy`** (not only
-`gpu-power-prefs`):
-
-```bash
-sudo nvram gpu-policy=%01
-nvram -p | grep -i gpu
-```
-
-Or use `macos/scripts/prepare-intel-from-macos.sh`.
-
-**Cold shutdown** (`sudo shutdown -h now`), not Restart, before the UKI boot.
-
-## Step B — Boot Linux via EFI stub / UKI
-
-Reboot holding the firmware boot picker if needed, select the Linux ESP, then
-the **Intel probe / UKI** entry (not a bare `protocol: linux` fallback).
-
-On this lab (2026-08-10): use the in-tree stack:
+From a clone of this repo, as root, on the **current Intel kernel**
+(not LTS — `build-apple-set-os-uki.sh` defaults to `uname -r`):
 
 ```bash
 sudo scripts/graphics/enable-intel-daily.sh
-sudo scripts/graphics/build-apple-set-os-uki.sh   # adds apple_gmux.force_igd=1
+sudo SKIP_LIMINE=1 KVER=7.1.5-1-cachyos scripts/graphics/build-apple-set-os-uki.sh
 ```
 
-Limine autoboot: `scripts/graphics/limine-set-default-uki.sh` (flat UKI entry,
-`default_entry: 1`, 5s timeout).
+Then point Limine `default_entry` at the **Intel UKI** leaf. Keep a
+numbered **NVIDIA LTS** recovery entry. **Do not** run
+`limine-set-default-uki.sh`: it strips extra Intel entries and forces
+the UKI to entry 1.
 
-**Required on MacBookPro11,3 today:** UKI cmdline must include
-`apple_gmux.force_igd=1`, and initramfs must load `apple-gmux` before `i915`
-(see `scripts/graphics/mkinitcpio-intel-uki.conf`). Without this, i915 often
-logs `failed to retrieve link info, disabling eDP` even when Set OS enumerates
-the iGPU. With `force_igd`, eDP-1 may show **connected** while kernel DRM modes
-are still empty — see
-[`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](../source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md).
+### What `enable-intel-daily.sh` installs
 
-## Step C — Verify on Linux
+| Path | Role |
+| --- | --- |
+| `/etc/modprobe.d/retinaforge-nvidia-off.conf` | blacklist proprietary nvidia 470; nouveau stays loadable |
+| `/etc/modprobe.d/retinaforge-apple-gmux-intel.conf` | `options apple_gmux force_igd=1` |
+| `/etc/modprobe.d/retinaforge-apple-gmux-softdep.conf` | load gmux/nouveau before i915 |
+| `/usr/local/sbin/retinaforge-i915-ddi-4lanes.py` | mmap BAR0, set `DDI_A_4_LANES`, `modprobe i915` |
+| `/etc/systemd/system/retinaforge-i915-ddi-4lanes.service` | oneshot **before** the display manager |
+| `/etc/systemd/system/sddm.service.d/retinaforge-ddi-4lanes.conf` | `After=` / `Wants=` the poke |
+| `/etc/X11/xorg.conf.d/40-intel-panel.conf` | modesetting, `BusID PCI:0:2:0`, `kmsdev` by-path |
+| `/etc/X11/xorg.conf.d/50-disable-nvidia.conf` | ignore packaged NVIDIA OutputClass |
+
+The oneshot is `ConditionKernelCommandLine=apple_gmux.force_igd=1`, so a
+Limine NVIDIA LTS boot skips it.
+
+It also **disables** the eDP-handoff unit (that profile can wedge SSH).
+
+### What the Intel UKI must contain
+
+`scripts/graphics/mkinitcpio-intel-uki.conf`:
+
+- `MODULES=(apple-gmux nouveau)` — **no i915**, **no kms hook**
+- FILES: the three `retinaforge-*.conf` drop-ins above
+- cmdline tokens (plus normal `root=`):
+  `apple_gmux.force_igd=1 i915.enable_dc=0 modprobe.blacklist=i915 plymouth.enable=0`
+
+Boot order that worked:
+
+1. EFI stub → `apple_set_os()` → iGPU enumerated
+2. Initramfs: apple-gmux `force_igd` switches mux to IGD; nouveau loads;
+   i915 stays out
+3. Root: `retinaforge-i915-ddi-4lanes.service` writes `0x64000` bit 4
+   (`0x81` → `0x91` in the lab), then `modprobe i915 enable_dc=0`
+4. SDDM / Xorg modesetting on Iris Pro
+
+Journal lines to look for:
+
+```text
+retinaforge-i915-ddi-4lanes: i915 not loaded
+retinaforge-i915-ddi-4lanes: DDI_BUF_CTL_A before=0x00000081 4lanes=False
+retinaforge-i915-ddi-4lanes: DDI_BUF_CTL_A after=0x00000091 4lanes=True
+retinaforge-i915-ddi-4lanes: fb0=i915drmfb
+```
+
+### Verify (must pass)
 
 ```bash
-chmod +x scripts/graphics/check-intel-first-panel.sh
-sudo ./scripts/graphics/check-intel-first-panel.sh
+sudo scripts/graphics/check-intel-first-panel.sh
+sudo scripts/graphics/verify-intel-uki-boot.sh
 ```
-
-Critical expectations:
 
 | Check | Expected |
 | --- | --- |
-| PCI | `8086:0d26` present |
-| fb0 | name contains `i915` |
-| DRM | eDP connected (Retina often 2880×1800) |
+| PCI | `8086:0d26` |
+| fb0 | `i915drmfb` |
+| i915 eDP | connected, kernel mode **2880×1800** (empty modes = still 2-lane) |
+| debugfs | `i915_dp_max_lane_count=4` |
 | switcheroo | `IGD:+:Pwr` |
-| optional | `DIS: … Off` for cooler idle |
+| Xorg | modesetting + glamor on Iris Pro, output often named `eDP-2` |
 
-### Optional: power down discrete client
+`gpu-policy` may still read discrete on Linux. That is **not** a failure;
+`force_igd` already switched the mux. `DIS: … Pwr` is a thermal warning,
+not a panel-ownership failure.
 
-Only after IGD owns the panel:
+## Optional: OpenGL on the GT 750M (not AGS)
+
+Confirmed 2026-08-16 with the mux still on IGD:
 
 ```bash
-echo OFF | sudo tee /sys/kernel/debug/vgaswitcheroo/switch
-sudo cat /sys/kernel/debug/vgaswitcheroo/switch
+DRI_PRIME=0 glxinfo -B    # Iris Pro
+DRI_PRIME=1 glxinfo -B    # nouveau NVE7
+scripts/graphics/prime-run glxgears
 ```
 
-Re-check after later boots; `DIS` may return to `Pwr`.
+Intel keeps the lid. Only that process renders on nouveau. Vulkan stayed
+on Intel. Proprietary nvidia 470 is **not** this path. `echo OFF` on
+switcheroo would stop offload (needs DIS powered).
 
-**Do not** use live mid-session IGD/DIS handoff or `mbp-cool-idle`-style
-switcheroo hacks as a substitute for Steps A–B. Boot-time `force_igd` on the
-UKI path is documented above; it is not the same as live forcing after login.
-
-## External displays (separate from this recipe)
-
-- **USB DisplayLink** can drive external 1080p panels with the GT 750M left
-  off; sustained use is CPU-heavy and hot. Treat as occasional presenting.
-- **Native** Thunderbolt/DP-style outputs on this generation still imply the
-  discrete GPU path and are a different experiment (Nouveau / legacy
-  proprietary). Do not claim them from a successful Intel-panel boot alone.
-
-## Desktop notes (operator comfort, not driver proof)
-
-- Prefer a light X11 desktop if the session must stay usable while testing
-  (Xfce behaved better than a heavy Plasma session in this lab).
-- On multi-GPU X11, point the compositor at the Intel DRM node when both cards
-  enumerate.
-- Retina scaling needs real toolkit scale inheritance (for example Qt 1.5), not
-  only a settings checkbox that never reaches the session.
+This is not Big Sur Automatic Graphics Switching.
+[`docs/graphics/why-not-macos-ags.md`](why-not-macos-ags.md),
+[`docs/source-notes/2026-08-16-dri-prime-nouveau.md`](../source-notes/2026-08-16-dri-prime-nouveau.md).
 
 ## Recovery
 
-- Firmware boot picker → macOS.
-- If Linux graphics is wrong: nomodeset / non-UKI fallback entry, or reset
-  `gpu-power-prefs` from macOS to discrete `%00%00%00%00` for Apple-oriented
-  behavior.
-- Never chase a black screen with repeated live mux experiments.
-- If the internal panel goes black but the machine is otherwise up (SSH /
-  display manager still running): raise GMUX backlight sysfs brightness and
-  restart the display manager before any mux experiments. If still black,
-  force a re-modest of the panel connector (`xrandr --output eDP-1 --off`
-  then `--auto` on the DIS-side X display); a 2026-08-07 recovery of the
-  hybrid black-panel mode needed backlight max + sddm restart + that
-  re-modest to bring the screen back. A 2026-08-05 retest hit a hybrid
-  failure (Intel-oriented prefs attempt while Nouveau still owned the fb)
-  that recovered via backlight + DM restart; see
+- Limine → **NVIDIA LTS** after `sudo scripts/graphics/disable-nvidia-off.sh`
+  (restores NVIDIA Xorg, removes Intel `40-intel-panel.conf`).
+- Firmware boot picker → macOS (NVRAM / Apple recovery).
+- Black lid but SSH up: GMUX backlight to max, restart display manager.
+  Do **not** live-`echo IGD`/`DIS`.
+- eDP-handoff profile: opt-in only, never default (SSH wedge, 2026-08-10).
+
+## Hard stops / failed experiments (do not retry as “the fix”)
+
+| Experiment | Result |
+| --- | --- |
+| macOS `gpu-policy=%01` + cold off + UKI, no `force_igd` | mux stays `DIS:+`; ghost eDP |
+| Byte-identical 2026-08-01 UKI after verified NVRAM | still ghost eDP (2026-08-13) |
+| `force_igd` only (i915 in initramfs, no lane poke) | eDP connected, **0 modes**, Xorg no screens |
+| `video=eDP-*:2880x1800@60e` | `User-defined mode not supported` (`CLOCK_HIGH`) |
+| debugfs `i915_dp_force_lane_count=4` | `max_lane_count` stays 2; modes stay empty |
+| Live `echo IGD` after boot | switcheroo can say `IGD:+` while the panel stays on the other driver |
+| DIS-first eDP handoff v1–v3 as **default** boot | v3 lost SSH; do not re-enable |
+| Stock Omarchy ISO on the internal SSD | dedicated-drive wipe; **erases macOS** |
+
+Live GMUX forcing after a black screen is how you lose the lid. SSH-first.
+
+## Distro notes (including Omarchy)
+
+Graphics success is **not** “whatever distro as long as it is Linux.”
+
+Required on any reinstall:
+
+1. **Keep macOS.**
+2. Boot via **EFI stub / UKI** so `apple_set_os()` runs. Bare Limine/GRUB
+   `protocol: linux` skipped Set OS on this machine.
+3. A kernel whose `apple-gmux` has **`force_igd`**, or an equivalent mux
+   switch before i915. **Mainline and stock Arch/Omarchy kernels may not
+   have this CachyOS patch.**
+4. The DDI A 4-lane poke (userspace script, or the unbuilt DMI quirk in
+   `patches/0003-i915-mbp11-3-ddi-a-4-lanes.patch`).
+5. i915 delayed until after that poke.
+6. Xorg (or a compositor) pinned to `PCI:0:2:0`, NVIDIA OutputClass
+   ignored. This lab proved **X11**. Hyprland/Wayland is untested here.
+7. `check-intel-first-panel.sh` must pass. PCI presence is not enough.
+
+**Omarchy:** possible later as a **manual** dual-boot (keep macOS; do not use the
+stock ISO against the internal SSD — that path is a dedicated-drive wipe).
+The ISO defaults to LUKS; Omarchy documents `Ctrl+C` at the disk-format
+confirm for an encryption-less ISO install, and a manual Arch install can
+skip LUKS. On this SSD, lab probes showed **ext4-on-dm-crypt** ~1.1 s durable
+sync tails; dm-crypt alone was fast. The working graphics install is
+unencrypted ext4. Skipping LUKS is reasonable here; it does **not** skip the
+graphics stack (UKI / `force_igd` / DDI poke). Omarchy is Hyprland/Wayland
+and stock Arch kernels may lack CachyOS `force_igd`. Porting is a project,
+not a wipe.
+
+## External displays
+
+USB DisplayLink can drive 1080p panels with GT 750M left off; hot if
+sustained. Native Thunderbolt/DP-style outputs still imply the discrete
+GPU and are a separate experiment.
+
+## Historical record (not the recipe)
+
+- 2026-08-01 unreproduced positive:
+  [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](../source-notes/2026-08-01-intel-panel-and-display-path.md)
+- 2026-08-05 same-recipe miss:
   [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](../source-notes/2026-08-05-intel-panel-path-retest.md)
-  and [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](../source-notes/2026-08-06-intel-panel-investigation-and-migration.md).
+- Mux always DIS on Linux UKI:
+  [`docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`](../source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md)
+- `force_igd` 0-modes:
+  [`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](../source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md)
+- 08-01 UKI retest:
+  [`docs/source-notes/2026-08-13-historical-uki-retest.md`](../source-notes/2026-08-13-historical-uki-retest.md)
 
-## Negative retest (2026-08-05)
-
-The 2026-08-01 success was **not** reproduced by repeating Steps A–B alone
-(including cold power-off and an integrated-only `pmset` lock on macOS).
-`check-intel-first-panel.sh` failed with `nouveaudrmfb` and `i915` eDP
-link-info errors despite UKI Set OS enumerating the iGPU. Do not claim a
-working Intel desktop from prefs readback or iGPU PCI presence alone.
-
-## Negative retest of the original UKI (2026-08-13)
-
-Booting a byte-identical copy of the 08-01 success UKI after verified macOS
-Intel NVRAM and a cold shutdown still produced `failed to retrieve link
-info` / no `i915drmfb`. Do not repeat that pair as the next experiment.
-Daily Linux should keep the proprietary NVIDIA LTS entry as Limine default
-until the check script passes. See
-[`docs/source-notes/2026-08-13-historical-uki-retest.md`](../source-notes/2026-08-13-historical-uki-retest.md).
-
-## Distro migration (CachyOS → Debian/Fedora/…)
-
-Graphics success here is **not tied to CachyOS**. When reinstalling:
-
-1. Preserve macOS.
-2. Recreate an EFI-stub/UKI boot entry (systemd-boot + UKI, or Limine `protocol:
-   efi`, etc.).
-3. Repeat Steps A–C.
-4. Keep storage experiments and graphics experiments in separate boots.
-
-Fedora’s newer kernels are often closer to upstream Apple quirks; Debian stable
-may need a newer kernel package for the same comfort. Validate with
-`check-intel-first-panel.sh` rather than assuming the brand name matters.
-
-## What this recipe does *not* claim
-
-- macOS-equivalent automatic graphics switching — **why** is written in
-  [`docs/graphics/why-not-macos-ags.md`](why-not-macos-ags.md); this is an
-  indexed GMUX / eDP-handoff limit, not a missing toggle
-- GMUX physical rail-off proof beyond switcheroo `Off`
-- Nouveau modeset or CUDA bring-up
-- Fixing Apple AHCI durable-write latency (`144d:1600`)
+macOS NVRAM scripts remain in `macos/scripts/` for Apple-side experiments.
+They are **not** why the 2026-08-16 Linux desktop works.

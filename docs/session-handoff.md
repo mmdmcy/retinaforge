@@ -1,47 +1,54 @@
 # Next Session Handoff
 
-Last updated: 2026-08-16 — **session wrapped; AGS-vs-Linux written down**
+Last updated: 2026-08-16 — **Intel i915 panel path works**
 
-## Session wrap (2026-08-16)
+## Session wrap (2026-08-16, evening)
 
-OpenCode GPT-5.6 work on this tree from 2026-08-10 through 2026-08-13 is now
-in git. Goal remains **Intel i915 desktop on the internal panel**. A sale /
-triple-boot listing detour on 2026-08-13 was abandoned the same day; keep the
-machine as the lab.
+Intel-first desktop is **repeatable** on this machine. `check-intel-first-panel.sh`
+and `verify-intel-uki-boot.sh` both passed after a UKI reboot.
 
-**Left on disk (Linux, last confirmed 2026-08-13 evening):**
+**Cause of the old 0-modes gap:** Haswell `DDI_BUF_CTL_A` lacked `DDI_A_4_LANES`.
+Firmware boots Linux on DIS, so Intel GOP never sets the bit. i915 then treats
+PORT_A as 2-lane; 2880×1800 is `CLOCK_HIGH`. Full record:
+`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`.
 
-- Limine **default** = `RetinaForge NVIDIA LTS` (`6.18.40-1-cachyos-lts`,
-  NVIDIA 470, Plasma X11, panel 2880×1800). This is the SSH recovery desktop.
-- Manual menu: `RetinaForge Intel historical baseline` (byte copy of the
-  08-01 success UKI) and the newer `force_igd` Intel UKI. Neither is default.
-- 2026-08-13 historical-UKI retest **failed** even after verified macOS
-  `gpu-policy=%01` + Intel `gpu-power-prefs` + cold off. See
-  `docs/source-notes/2026-08-13-historical-uki-retest.md`.
-- eDP-handoff profile is **opt-in only** and must stay off the default boot
-  (wedges SSH). `enable-intel-daily.sh` disables that unit.
+**Left on disk (Linux, last confirmed 2026-08-16):**
 
-**Reachability at wrap (2026-08-16):** `mbp113-linux` last seen ~2 days ago
-on the tailnet; `mbp113-macos` LAN SSH timed out. Assume the lab laptop is
-powered off or asleep until a physical power-on. Do not reboot it blindly
-from another device.
+- Limine **default_entry = 2** = `RetinaForge Intel UKI`
+  (`cachyos-apple-set-os.efi`, kernel `7.1.5-1-cachyos`, cmdline
+  `apple_gmux.force_igd=1 i915.enable_dc=0 modprobe.blacklist=i915`).
+- Recovery: `RetinaForge NVIDIA LTS` remains **entry 1** (do not delete).
+  `disable-nvidia-off.sh` before that boot if nvidia-off is on the rootfs.
+- `retinaforge-i915-ddi-4lanes.service` enabled; pokes MMIO then loads i915
+  **before** SDDM. Guarded by `apple_gmux.force_igd=1` on the cmdline.
+- Intel Xorg: `/etc/X11/xorg.conf.d/40-intel-panel.conf` + `50-disable-nvidia.conf`.
+- eDP-handoff profile still **opt-in only** (wedges SSH). Historical 08-01 UKI
+  and video-modes UKI stay as manual entries; do not make them default.
+- Do **not** run `limine-set-default-uki.sh` / `enable-intel-daily.sh`'s old
+  Limine rewrite — it strips extra Intel entries and forces UKI to entry 1.
+
+**Do not** repeat historical UKI + NVRAM. **Do not** copy Big Sur AGS
+(`docs/graphics/why-not-macos-ags.md`).
 
 | Doc | Contents |
 | --- | --- |
-| `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md` | `force_igd` breakthrough, 0 DRM modes, Xorg fail |
+| `docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md` | DDI A 4-lane root cause + persistent recipe |
+| `docs/source-notes/2026-08-16-dri-prime-nouveau.md` | OpenGL offload to nouveau while Intel owns the lid |
+| `docs/graphics/intel-first-repro.md` | **Cook-book to reproduce** (start here after a wipe scare) |
+| `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md` | `force_igd` breakthrough, 0 DRM modes (now explained) |
 | `docs/source-notes/2026-08-10-edp-handoff-research.md` | DIS-first handoff v1–v3, `NEEDS_EDP_CONFIG`, boot wedge |
 | `docs/source-notes/2026-08-13-historical-uki-retest.md` | 08-01 UKI + verified NVRAM still ghost-panel |
 | `docs/graphics/why-not-macos-ags.md` | Why Linux cannot copy Big Sur AGS on this GMUX |
-| `scripts/graphics/enable-intel-daily.sh` | Default Intel path (`force_igd`; handoff off) |
+| `scripts/graphics/enable-intel-daily.sh` | Intel path: force_igd, DDI poke, Xorg; handoff off |
+| `scripts/graphics/retinaforge-i915-ddi-4lanes.py` | MMIO poke + i915 load |
 | `scripts/graphics/enable-intel-edp-handoff.sh` | Opt-in handoff profile only |
-| `scripts/graphics/retinaforge-keep-display-awake.sh` | X11 DPMS helper (user `XAUTHORITY`, not SDDM’s) |
 
-**Resume (one variable):** power on → confirm NVIDIA LTS still default →
-**do not** repeat historical UKI + NVRAM. Next Intel work is the `force_igd`
-0-modes gap, or a user-present distro/kernel isolation. Keep NVIDIA LTS as
-fallback. Do **not** start a macOS-style dual-GPU switching project; that is
-out of scope until Intel panel ownership is repeatable. Why:
-[`docs/graphics/why-not-macos-ags.md`](graphics/why-not-macos-ags.md).
+**Resume:** Intel panel is the daily UKI default. OpenGL `DRI_PRIME=1` works
+with nouveau; that is not AGS. Omarchy is **fun only** on a spare disk/VM —
+never the stock ISO on the internal SSD (it would wipe macOS). Next optional
+work: suspend/resume, kernel DMI quirk, DIS `OFF` (conflicts with PRIME).
+Keep NVIDIA LTS as fallback. Reproduce from
+`docs/graphics/intel-first-repro.md`, not from chat memory.
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not
@@ -104,18 +111,19 @@ If Intel experiments leave no local display but SSH still works:
 - Note: verify boot path with `uname -r` and StubInfo before trusting results.
 - macOS stays the recovery reference.
 
-**UKI / Intel daily path (2026-08-10, updated evening):**
+**UKI / Intel daily path (2026-08-16, working):**
 
-- In-tree stack: `enable-intel-daily.sh`, `build-apple-set-os-uki.sh`,
-  `limine-set-default-uki.sh`, `verify-intel-uki-boot.sh`.
-- **Breakthrough:** `apple_gmux.force_igd=1` on UKI + `MODULES=(apple-gmux
-  i915)` → `Switching to IGD`, eDP-1 **connected**, no link-info fail.
-- **Still open:** kernel DRM **0 modes** on eDP-1; Xorg `failed to set mode`;
-  black panel, backlight max. Not `i915drmfb` yet.
-- macOS `gpu-policy %01` before cold off still reads `%00` on Linux early boot;
-  `force_igd` bypasses GMUX but prefs may still matter for full modeset.
-- Full record: `docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`.
+- In-tree stack: `enable-intel-daily.sh`, `build-apple-set-os-uki.sh`
+  (`SKIP_LIMINE=1`), `verify-intel-uki-boot.sh`,
+  `retinaforge-i915-ddi-4lanes.py`.
+- Mux: `apple_gmux.force_igd=1` → `IGD:+:Pwr`, eDP connected.
+- Modes: poke `DDI_A_4_LANES` then load i915 → `i915drmfb`, 2880×1800, 4 lanes.
+- Desktop: Xorg modesetting + glamor on Iris Pro, Plasma X11 via SDDM.
+- macOS `gpu-policy` may still read `%00` on Linux; `force_igd` is sufficient
+  for the mux. Full record:
+  `docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`.
 - Do **not** re-enable `retinaforge-nouveau.service` on nvidia-off path.
+- Do **not** re-enable eDP-handoff as default.
 
 **eDP handoff profile (2026-08-10 evening, new):**
 
@@ -152,11 +160,17 @@ If Intel experiments leave no local display but SSH still works:
 - KDE DPMS needed a keep-awake helper using the user X auth file; a later
   full-machine drop-off was likely **sleep**, not panel blanking.
 
-## Graphics — current state (2026-08-07)
+## Graphics — current state (2026-08-16)
 
-**Last proven Intel panel success:** 2026-08-01 (`i915drmfb`). See
-`docs/graphics/intel-first-repro.md` and
-`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`.
+**Intel panel path is working.** `i915drmfb`, eDP 2880×1800, 4 lanes, Plasma
+X11 on Iris Pro. Recipe: UKI `force_igd` + delayed i915 + DDI A 4-lane poke.
+See `docs/graphics/intel-first-repro.md` and
+`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`.
+
+The 2026-08-01 `i915drmfb` boot remains historically interesting (firmware
+probably left mux on IGD so GOP had already set `DDI_A_4_LANES`) but is **not**
+the reproduction path. 08-05 / 08-13 negatives are explained by DIS-first GOP
+leaving PORT_A at 2 lanes (or ghost-panel when i915 probed on DIS).
 
 **2026-08-05 retest:** same recipe (macOS Intel `gpu-power-prefs` + UKI) failed
 to restore Intel eDP ownership. Nouveau remained primary; hybrid black-panel
@@ -185,31 +199,12 @@ question is whether macOS switches the mux at runtime (AGS) or firmware
 discriminates by boot target. Full record:
 `docs/source-notes/2026-08-07-e2-clean-slate-and-control-test.md`.
 
-Do **not** burn another session on identical NVRAM + cold UKI loops. Next
-graphics attempt must change one factor and get a user-present checkpoint.
-**Mux investigation CLOSED 2026-08-08 (negative):** the forced-DIS test
-(macOS session verified ending on NVIDIA → cold off → UKI → still `DIS:+`)
-completed the pair with the 08-07 Intel-ended control; Linux UKI boots land
-on DIS regardless of NVRAM state or the preceding macOS mux position. The
-08-01 `i915drmfb` success is the single unreproduced anomaly. Also recorded:
-Limine config identical across 08-01 success and 08-05 retest (boot path
-ruled out); `gpuswitch 1` = discrete, `2` = integrated on this machine
-(inverted from common docs); LTS bare entry + proprietary nvidia 470 is a
-working discrete fallback. Repeatable stable state = discrete desktop (UKI
-+ nouveau, or LTS + nvidia). Full record:
-`docs/source-notes/2026-08-08-limine-timeline-and-forced-dis-test.md`.
+Do **not** burn another session on identical NVRAM + cold UKI loops. Mux
+investigation closed 2026-08-08: Linux UKI boots land on DIS regardless of
+NVRAM. `force_igd` is the mux fix; DDI A 4 lanes is the modes fix.
 
-Daily usable path until Intel is re-proven: continue Intel-first experiments.
-Do not recommend discrete desktop as a substitute unless the user explicitly
-asks for recovery or SSH is blocked.
-
-Restore recipe when Intel panel works:
-
-1. From macOS: `macos/scripts/set-gpu-power-prefs-intel.sh` (`%01%00%00%00`)
-2. Boot Linux via UKI / EFI-stub (not bare `protocol: linux`)
-3. On Linux: `scripts/graphics/check-intel-first-panel.sh` must pass
-4. Optional: switcheroo `OFF` for the discrete client after IGD owns the panel
-5. Never live-force GMUX / IGD mid-session
+Optional after Intel owns the panel: switcheroo `OFF` for DIS. Never
+live-force GMUX mid-session. Do not re-enable eDP-handoff as default.
 
 DisplayLink helpers (occasional presenting only):
 `scripts/graphics/present-{on,layout,off}`. Sustained dual DisplayLink is hot.
@@ -238,9 +233,8 @@ optional always-on/lid policy, display manager/autologin, toolkit scale.
 - No casual USB reprovision, repartition, or physical write tests without a
   fresh user-present checkpoint.
 - Do not mix storage and NVIDIA/GMUX changes in one patch or experiment.
-- No live GMUX handoff mid-session. Boot-time `apple_gmux.force_igd=1` on the
-  UKI path is **in scope** (see 2026-08-10 note); do not stack other variables
-  in the same reboot without recording them.
+- Boot-time `apple_gmux.force_igd=1` plus the DDI A 4-lane poke are the Intel
+  daily path. Do not stack eDP-handoff or storage experiments on the same boot.
 
 ## Access
 
@@ -255,22 +249,27 @@ when that OS is the running system. Do not copy key material into git.
 
 ## Next experiments (pick one; do not combine)
 
-0. **Intel daily desktop (primary goal)** — `force_igd` UKI path already
-   gets eDP **connected** with 0 DRM modes. Next: one-at-a-time i915 cmdline
-   / PC8 / initramfs-firmware diff. Keep NVIDIA LTS as Limine default.
-0b. **Boot automation** — `limine-set-default-uki.sh` (flat entry 1, 5s) only
-    after `check-intel-first-panel.sh` passes.
+0. ~~Intel daily desktop~~ — **DONE 2026-08-16** (`force_igd` + DDI A 4-lane
+   poke; check scripts pass). Keep NVIDIA LTS as Limine entry 1 for recovery.
+0b. **Do not** run `limine-set-default-uki.sh` unless you intend to flatten
+    the menu (it strips extra Intel UKI entries).
 1. ~~UKI nvidia-off rebuild~~ — **DONE 2026-08-10** (`build-apple-set-os-uki.sh`).
 2. ~~In-tree verify script~~ — **DONE** (`verify-intel-uki-boot.sh`).
-3. **DRM modes on eDP-1** — remaining `force_igd` gap (see 08-10 UKI note).
+3. ~~DRM modes on eDP~~ — **DONE 2026-08-16** (DDI A 4 lanes).
 4. ~~E2 — clean-slate retry~~ — **RUN 2026-08-07, negative** (see 08-07 note).
 5. ~~Pin / retest the 08-01 UKI~~ — **RUN 2026-08-13, negative** (see 08-13 note).
-6. Suspend/resume **after** Intel panel ownership is re-proven. Current NVIDIA
-   session can still sleep the whole machine; that is not an Intel experiment.
-7. Native GT 750M outputs (separate from DisplayLink).
-8. Storage flush-pattern follow-up only with an explicit checkpoint.
-9. ~~Indexed eDP handoff as default boot~~ — **tried 2026-08-10, do not
-   re-enable on default** (SSH wedge). Opt-in profile only.
+6. Suspend/resume **on the Intel UKI desktop** (now in scope).
+7. Optional: switcheroo `OFF` for DIS after IGD owns the panel (cooler idle).
+   Do not combine with eDP-handoff v3. **Conflicts with DRI_PRIME** (needs DIS
+   powered + nouveau).
+8. Kernel DMI quirk: `patches/0003-i915-mbp11-3-ddi-a-4-lanes.patch` (unbuilt).
+9. Native GT 750M outputs (separate from DisplayLink).
+10. Storage flush-pattern follow-up only with an explicit checkpoint.
+11. ~~Indexed eDP handoff as default boot~~ — **tried 2026-08-10, do not
+    re-enable on default** (SSH wedge). Opt-in profile only.
+12. ~~DRI_PRIME OpenGL offload~~ — **DONE 2026-08-16** (`DRI_PRIME=1` → nouveau
+    NVE7, Intel keeps the lid). Vulkan stays Intel. Not AGS.
+    `docs/source-notes/2026-08-16-dri-prime-nouveau.md`.
 
 Default when unsure: leave APFS alone; read the 2026-08-06 investigation note
 before changing NVRAM or the bootloader.

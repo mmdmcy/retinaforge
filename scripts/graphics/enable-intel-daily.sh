@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# enable-intel-daily.sh — target config for Intel-first UKI daily boot on mbp113.
+# enable-intel-daily.sh — target config for Intel-first UKI daily boot.
 #
-# - UKI auto-default (limine)
 # - proprietary NVIDIA blocked; nouveau allowed for GMUX switcheroo
 # - Xorg on Intel modesetting
+# - DDI A 4-lane poke before i915 (Haswell GOP never sets the bit on DIS-first)
 #
 # Recovery only (SSH, no local display): boot macOS (Option) or Limine →
 # linux-cachyos-lts after disable-nvidia-off.sh. Not the product goal.
+# This script does not rewrite Limine; keep NVIDIA LTS as a numbered recovery
+# entry and set default_entry to the Intel UKI after check-intel-first-panel.sh
+# passes.
 
 set -euo pipefail
 
@@ -39,12 +42,24 @@ if [[ -f /etc/X11/xorg.conf.d/30-nvidia-composition.conf ]]; then
 fi
 
 install -Dm644 "${root}/scripts/graphics/xorg-intel-panel.conf" /etc/X11/xorg.conf.d/40-intel-panel.conf
+install -Dm644 "${root}/scripts/graphics/xorg-disable-nvidia.conf" /etc/X11/xorg.conf.d/50-disable-nvidia.conf
 
-"${root}/scripts/graphics/limine-set-default-uki.sh"
+install -Dm755 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes.py" /usr/local/sbin/retinaforge-i915-ddi-4lanes.py
+install -Dm644 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes.service" /etc/systemd/system/retinaforge-i915-ddi-4lanes.service
+install -Dm644 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes-display-manager.conf" \
+	/etc/systemd/system/display-manager.service.d/retinaforge-ddi-4lanes.conf
+install -Dm644 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes-display-manager.conf" \
+	/etc/systemd/system/sddm.service.d/retinaforge-ddi-4lanes.conf
+systemctl daemon-reload
+systemctl enable retinaforge-i915-ddi-4lanes.service
+
+# Keep NVIDIA LTS as a numbered recovery entry. Do not rewrite Limine here:
+# limine-set-default-uki.sh strips extra Intel UKI entries and forces entry 1.
 install -Dm755 "${root}/scripts/graphics/retinaforge-log-gpu-policy.sh" /usr/local/sbin/retinaforge-log-gpu-policy.sh
 install -Dm644 "${root}/scripts/graphics/retinaforge-log-gpu-policy.service" /etc/systemd/system/retinaforge-log-gpu-policy.service
 systemctl enable retinaforge-log-gpu-policy.service
 /usr/local/sbin/gmux-backlight-max.sh 2>/dev/null || "${root}/scripts/graphics/gmux-backlight-max.sh"
 
 depmod -a
-echo "Intel-daily target config installed. Reboot for a clean UKI + nvidia-off boot."
+echo "Intel-daily target config installed (DDI 4-lane poke + Intel Xorg)."
+echo "Rebuild the UKI with SKIP_LIMINE=1, then reboot the Intel UKI entry."

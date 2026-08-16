@@ -68,7 +68,7 @@ else
 	fail "Intel GPU 8086:0d26 missing"
 fi
 
-if lsmod | grep -q '^i915 '; then
+if [[ -d /sys/module/i915 ]] || lsmod | grep -qE '^i915[[:space:]]'; then
 	pass "i915 loaded"
 else
 	fail "i915 not loaded"
@@ -129,6 +129,24 @@ if [[ "$intel_edp" -eq 1 ]]; then
 	pass "i915 owns a connected eDP connector"
 else
 	fail "no connected eDP on i915"
+fi
+
+mode_ok=0
+for card in /sys/class/drm/card*; do
+	[[ -d "$card/device/driver" ]] || continue
+	driver="$(readlink -f "$card/device/driver" | xargs basename)"
+	[[ "$driver" == "i915" ]] || continue
+	for modesf in "$card"-eDP-*/modes; do
+		[[ -e "$modesf" ]] || continue
+		modes=$(tr '\n' ' ' <"$modesf" | sed 's/[[:space:]]*$//')
+		info "i915 $(basename "$(dirname "$modesf")") modes=${modes:-empty}"
+		printf '%s\n' "$modes" | grep -qE '2880x1800' && mode_ok=1
+	done
+done
+if [[ "$mode_ok" -eq 1 ]]; then
+	pass "i915 eDP advertises 2880x1800"
+else
+	fail "i915 eDP has no 2880x1800 kernel DRM mode"
 fi
 
 switch_path=/sys/kernel/debug/vgaswitcheroo/switch

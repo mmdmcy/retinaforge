@@ -129,8 +129,8 @@ whatever GPU already owns the display. It does not flip GMUX.
 All of these, in order:
 
 1. `scripts/graphics/check-intel-first-panel.sh` passes: `i915drmfb`, eDP
-   2880×1800, real DRM modes. **Currently false** except the unreproduced
-   2026-08-01 boot.
+   2880×1800, real DRM modes. **Done 2026-08-16** (`force_igd` + DDI A 4-lane
+   poke).
 2. A documented, non-wedging way to leave **both** `i915` and a switcheroo
    NVIDIA client registered (nouveau, not 470) without blacking the panel.
 3. A successful **eDP link-parameter handoff** on this indexed GMUX (the
@@ -138,25 +138,26 @@ All of these, in order:
 4. Only then: a userspace policy (switcheroo / custom daemon). That is still
    not Big Sur AGS; it would be a crude boot-or-manual mux.
 
-Item 1 is the current Intel track. Items 2–4 are **not** the next
-experiment. Do not combine them with (1).
+Item 1 is closed. Items 2–4 are still not a macOS AGS clone. Do not combine
+them with a distro wipe. The realistic dual-GPU experiment after item 1 is `DRI_PRIME` offload onto
+nouveau **while Intel already owns the panel** — not a runtime GMUX hop.
+OpenGL offload was confirmed 2026-08-16; see
+[`docs/source-notes/2026-08-16-dri-prime-nouveau.md`](../source-notes/2026-08-16-dri-prime-nouveau.md).
 
 ## Realistic Linux shapes on this hardware
 
 | Shape | Status | Like Big Sur? |
 | --- | --- | --- |
-| NVIDIA 470 owns the panel (current default) | works; warmer | no |
-| Intel owns the panel; NVIDIA `OFF` after | **goal**; panel ownership still open | no; Intel-only |
-| Boot-time mux pick (UKI / `force_igd`) | partial (`connected`, 0 modes) | no |
+| NVIDIA 470 owns the panel (Limine recovery entry) | works; warmer | no |
+| Intel owns the panel; NVIDIA `OFF` after | **working (2026-08-16)**; DIS `OFF` still optional | no; Intel-only |
+| Boot-time mux pick (UKI / `force_igd` + DDI A 4 lanes) | working (`i915drmfb` 2880×1800) | no |
 | Runtime AGS-style panel hop | failed in lab; hard stop | no |
-| `DRI_PRIME` offload | only after Intel owns the panel | no; Optimus-like, not mux |
+| `DRI_PRIME` offload | **works for OpenGL** (2026-08-16): `DRI_PRIME=1` → nouveau NVE7 while Intel owns the lid. Not Vulkan. Not automatic. | no; Optimus-like, not mux |
 | Native TB/DP on GT 750M | separate experiment | no |
 
-## What to do next (unchanged)
+## What to do next (unchanged on AGS)
 
-Keep Limine default on NVIDIA LTS. Next Intel work is filling DRM modes on
-the `force_igd` connected eDP, one kernel/cmdline variable at a time. See
-[`docs/session-handoff.md`](../session-handoff.md).
-
-Do not start an “AGS on Linux” project until the Intel panel check script
-passes on a repeatable boot.
+Intel panel ownership is solved (`force_igd` + DDI A 4-lane poke). Keep the
+NVIDIA LTS Limine entry for recovery. Do not start an “AGS on Linux” project;
+this mux cannot copy Big Sur switching. See
+[`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](../source-notes/2026-08-16-hsw-ddi-a-4-lanes.md).

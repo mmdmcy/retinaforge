@@ -24,7 +24,7 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux Intel-first graphics / GMUX | **Active** — `force_igd` opens IGD/eDP but DRM modes stay 0; 08-01 UKI retest still negative (2026-08-13). Big Sur–style switching is not a Linux target on this mux. | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/graphics/why-not-macos-ags.md`](docs/graphics/why-not-macos-ags.md) |
+| Linux Intel-first graphics / GMUX | **Working (2026-08-16)** — `force_igd` + DDI A 4-lane poke gives `i915drmfb` and 2880×1800; NVIDIA LTS stays a Limine recovery entry. Big Sur–style switching is not a Linux target on this mux. | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/graphics/why-not-macos-ags.md`](docs/graphics/why-not-macos-ags.md), [`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs
@@ -207,21 +207,17 @@ physical run remain separate user-present checkpoints.
 
 ## Linux Graphics Notes
 
-Intel-first internal panel ownership was verified on this `MacBookPro11,3`
-(2026-08-01): macOS-written Intel `gpu-power-prefs` plus an EFI-stub/UKI boot
-so `apple_set_os()` runs, then `i915` owns eDP 2880×1800. A 2026-08-05
-same-recipe retest did **not** restore Intel eDP ownership (Nouveau remained
-primary); see the negative note before assuming the path still works without a
-fresh check-script pass.
+Intel-first internal panel ownership is **repeatable** on this `MacBookPro11,3`
+(2026-08-16): EFI-stub/UKI boot so `apple_set_os()` runs, `apple_gmux.force_igd=1`
+switches the mux to IGD, then a pre-i915 `DDI_A_4_LANES` poke lets i915 own
+eDP 2880×1800 (`i915drmfb`). NVIDIA LTS remains a Limine recovery entry.
 
 - [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md)
 - [`docs/graphics/README.md`](docs/graphics/README.md)
-- Evidence (success):
+- Evidence (working path):
+  [`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md)
+- Earlier unreproduced positive (2026-08-01):
   [`docs/source-notes/2026-08-01-intel-panel-and-display-path.md`](docs/source-notes/2026-08-01-intel-panel-and-display-path.md)
-- Evidence (failed retest):
-  [`docs/source-notes/2026-08-05-intel-panel-path-retest.md`](docs/source-notes/2026-08-05-intel-panel-path-retest.md)
-- Investigation + Debian/Mint migration plan (2026-08-06):
-  [`docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md`](docs/source-notes/2026-08-06-intel-panel-investigation-and-migration.md)
 
 Keep graphics evidence and AHCI/libata patch series separate even though both
 tracks share this repository.

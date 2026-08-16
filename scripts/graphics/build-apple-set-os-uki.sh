@@ -2,7 +2,8 @@
 # build-apple-set-os-uki.sh — rebuild the Intel-probe UKI with nvidia-off policy.
 #
 # Installs modprobe intercepts, builds a UKI via an alternate mkinitcpio config
-# (MODULES=i915 + nvidia-off drop-in), and backs up the previous UKI.
+# (apple-gmux + nouveau, nvidia-off drop-in; i915 is delayed until the DDI
+# 4-lane poke), and backs up the previous UKI.
 #
 # Does NOT modify /etc/mkinitcpio.conf. Review printed kernel/cmdline before reboot.
 #
@@ -75,6 +76,10 @@ force_igd)
 	if [[ "$CMDLINE" != *i915.enable_dc=0* ]]; then
 		CMDLINE+=" i915.enable_dc=0"
 	fi
+	# Stop udev/initramfs from probing i915 before DDI_A_4_LANES is poked.
+	if [[ "$CMDLINE" != *modprobe.blacklist=i915* ]]; then
+		CMDLINE+=" modprobe.blacklist=i915"
+	fi
 	;;
 handoff)
 	CMDLINE="${CMDLINE//apple_gmux.force_igd=1/}"
@@ -109,7 +114,7 @@ file "$UKI_PATH" | grep -q 'PE32+' || {
 	exit 1
 }
 
-if [[ -f /boot/limine.conf ]]; then
+if [[ -f /boot/limine.conf && "${SKIP_LIMINE:-0}" != "1" ]]; then
 	cp -a /boot/limine.conf "/boot/limine.conf.bak-before-intel-uki-$(date +%Y%m%d-%H%M%S)"
 	"${root}/scripts/graphics/limine-set-default-uki.sh"
 fi

@@ -78,6 +78,26 @@ else
   fail "No connected eDP connector found under /sys/class/drm"
 fi
 
+# Kernel DRM modes (Haswell DDI A 2-lane CLOCK_HIGH produces a connected
+# eDP with an empty mode list and no i915drmfb).
+mode_ok=0
+if [[ -d /sys/class/drm ]]; then
+  for modesf in /sys/class/drm/card*-eDP-*/modes; do
+    [[ -e "$modesf" ]] || continue
+    conn=$(basename "$(dirname "$modesf")")
+    modes=$(tr '\n' ' ' <"$modesf" | sed 's/[[:space:]]*$//')
+    info "connector ${conn} modes=${modes:-empty}"
+    if printf '%s\n' "$modes" | grep -qE '2880x1800'; then
+      mode_ok=1
+    fi
+  done
+fi
+if [[ "$mode_ok" -eq 1 ]]; then
+  pass "eDP advertises 2880x1800"
+else
+  fail "eDP has no 2880x1800 kernel DRM mode (DDI A still 2-lane / CLOCK_HIGH?)"
+fi
+
 # Preferred mode hint (2880x1800 on this Retina)
 if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
   if xrandr 2>/dev/null | grep -qE '2880x1800'; then
@@ -118,7 +138,7 @@ else
 fi
 
 # Modules
-if lsmod | grep -q '^i915 '; then
+if [[ -d /sys/module/i915 ]] || lsmod | grep -qE '^i915[[:space:]]'; then
   pass "i915 module loaded"
 else
   fail "i915 module not loaded"
