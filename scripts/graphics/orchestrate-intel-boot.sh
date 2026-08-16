@@ -11,7 +11,8 @@ set -euo pipefail
 
 LINUX_HOST="${LINUX_HOST:-mbp113-linux}"
 MACOS_HOST="${MACOS_HOST:-mbp113-macos}"
-ROOT_ON_LINUX="${ROOT_ON_LINUX:-/home/mac/Documents/github/retinaforge}"
+# Clone path on the Linux side. Override; never hardcode a local username.
+ROOT_ON_LINUX="${ROOT_ON_LINUX:-}"
 MACOS_WAIT_SEC="${MACOS_WAIT_SEC:-300}"
 LINUX_WAIT_SEC="${LINUX_WAIT_SEC:-300}"
 
@@ -20,6 +21,10 @@ die() { printf '[orchestrate] ERROR: %s\n' "$*" >&2; exit 1; }
 
 ssh_linux() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$LINUX_HOST" "$@"; }
 ssh_macos() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$MACOS_HOST" "$@"; }
+
+if [[ -z $ROOT_ON_LINUX ]]; then
+	ROOT_ON_LINUX="$(ssh_linux 'printf %s "$HOME/Documents/github/retinaforge"')"
+fi
 
 wait_for_host() {
 	local host=$1 max=$2
@@ -59,10 +64,7 @@ log "Phase 4: macOS NVRAM + bless Limine"
 ssh_macos exec /bin/bash -s <<'EOF'
 set -euo pipefail
 root="${HOME}/Documents/github/retinaforge"
-if [[ ! -d "$root" ]]; then
-  root="/Users/mac/Documents/github/retinaforge"
-fi
-[[ -d "$root" ]] || { echo "retinaforge repo missing on macOS"; exit 1; }
+[[ -d "$root" ]] || { echo "retinaforge repo missing on macOS (expected \$HOME/Documents/github/retinaforge)"; exit 1; }
 "$root/macos/scripts/prepare-intel-from-macos.sh"
 # Bless Limine EFI on the Linux ESP (vfat partition 3 on this lab disk).
 limine_efi=$(diskutil list | awk '/EFI.*Linux|EFI/ {print; getline; print}' | head -1 || true)
