@@ -25,6 +25,7 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
 | Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
 | Linux Intel-first graphics / GMUX | **Working (2026-08-16)** — `force_igd` + DDI A 4-lane poke gives `i915drmfb` and 2880×1800; NVIDIA LTS stays a Limine recovery entry. Big Sur–style switching is not a Linux target on this mux. | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/graphics/why-not-macos-ags.md`](docs/graphics/why-not-macos-ags.md), [`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md) |
+| Linux tray plate (`MacBookPro11,3`) | Tray jewel + plate: Intel lid status, sleep/wake the unused GT 750M (`OFF`/`ON` only; no mux hops). | [`apps/mbp-panel/`](apps/mbp-panel/README.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
 Private captures, recovery media, deal photos, raw traces, and build outputs

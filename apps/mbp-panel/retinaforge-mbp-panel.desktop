@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=RetinaForge plate
+GenericName=MacBookPro11,3 GPU plate
+Comment=Tray plate for the Intel lid and GT 750M power on MacBookPro11,3
+Exec=/usr/local/bin/retinaforge-mbp-panel
+TryExec=/usr/local/bin/retinaforge-mbp-panel
+Icon=retinaforge-mbp-panel
+Terminal=false
+Categories=System;Monitor;HardwareSettings;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+X-KDE-StartupNotify=false

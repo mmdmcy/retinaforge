@@ -1,0 +1,12 @@
+// Allow a local active wheel/sudo session to run the MacBookPro11,3 helper
+// without a password. The helper itself refuses IGD/DIS mux hops and only
+// writes vgaswitcheroo ON/OFF.
+polkit.addRule(function (action, subject) {
+    if (action.id !== "org.retinaforge.mbp.helper") {
+        return;
+    }
+    if (subject.local && subject.active &&
+            (subject.isInGroup("wheel") || subject.isInGroup("sudo"))) {
+        return polkit.Result.YES;
+    }
+});

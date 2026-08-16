@@ -47,6 +47,7 @@ AHCI/libata patch series even though both tracks share the tree.
 | [`scripts/graphics/retinaforge-i915-ddi-4lanes.py`](../../scripts/graphics/retinaforge-i915-ddi-4lanes.py) | Write Haswell `DDI_A_4_LANES` then load i915 |
 | [`scripts/graphics/retinaforge-keep-display-awake.sh`](../../scripts/graphics/retinaforge-keep-display-awake.sh) | X11 DPMS off using the user auth file |
 | [`scripts/graphics/prime-run`](../../scripts/graphics/prime-run) | `DRI_PRIME=1` wrapper: one OpenGL app on nouveau, Intel keeps the panel |
+| [`apps/mbp-panel/`](../../apps/mbp-panel/README.md) | Tray plate: lid/mux/temps and Sleep/Wake 750M (no mux hops) |
 | [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | `extend` or `mirror` |
 | [`scripts/graphics/present-off`](../../scripts/graphics/present-off) | Stop DisplayLink; laptop only |
 

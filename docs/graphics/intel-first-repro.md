@@ -191,6 +191,20 @@ graphics stack (UKI / `force_igd` / DDI poke). Omarchy is Hyprland/Wayland
 and stock Arch kernels may lack CachyOS `force_igd`. Porting is a project,
 not a wipe.
 
+## Daily controls (tray plate)
+
+A small taskbar jewel lives in [`apps/mbp-panel/`](../../apps/mbp-panel/README.md).
+It shows whether the lid is on `i915`, whether the unused 750M is powered,
+and package/fan readings. Sleep/Wake write switcheroo `OFF`/`ON` only.
+They do not flip the mux. The **?** on the plate is the reminder: sage/idle
+is the default; Wake only for `prime-run`; NVIDIA 470 is a different boot.
+
+```bash
+sudo pacman -S --needed python-pyqt6 ttf-ibm-plex polkit
+sudo ./apps/mbp-panel/install.sh
+retinaforge-mbp-panel &
+```
+
 ## External displays
 
 USB DisplayLink can drive 1080p panels with GT 750M left off; hot if
