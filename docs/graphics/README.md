@@ -6,6 +6,8 @@ AHCI/libata patch series even though both tracks share the tree.
 
 ## Start here
 
+- **Rebuild this desktop (CachyOS or Debian):**
+  [`docs/graphics/recreate.md`](recreate.md)
 - **Reproduce Intel-first panel (how-to + scripts):**
   [`docs/graphics/intel-first-repro.md`](intel-first-repro.md)
 - **Why Linux cannot copy Big Sur GPU switching:**
@@ -28,6 +30,18 @@ AHCI/libata patch series even though both tracks share the tree.
   [`docs/source-notes/2026-08-16-dri-prime-nouveau.md`](../source-notes/2026-08-16-dri-prime-nouveau.md)
 - **Daily use, Steam, Omarchy, keep macOS:**
   [`max-value-and-omarchy.md`](max-value-and-omarchy.md)
+- **Desk power (750M stays on for HDMI/TB; no commute auto-sleep):**
+  [`work-battery.md`](work-battery.md)
+- **Debian workstation port (stable/patched kernel, same recipes):**
+  [`debian-workstation.md`](debian-workstation.md)
+- **Plasma Wayland on Iris Pro (verified 2026-08-17):**
+  [`wayland.md`](wayland.md)
+  ([lab note](../source-notes/2026-08-17-plasma-wayland.md))
+- **Hyprland (Command as Super; 0.56 overlay fix; Omarchy Lua pin):**
+  [`hyprland.md`](hyprland.md)
+  ([lab note](../source-notes/2026-08-17-hyprland.md))
+- **Omarchy 4 install (keep macOS, skip LUKS, `force_igd`, Lua dofile):**
+  [`omarchy.md`](omarchy.md)
 - **Gaming vs Retina (OpenGL list, why 2880×1800 exists):**
   [`gaming-and-retina.md`](gaming-and-retina.md)
 - Upstream graphics review:
@@ -47,12 +61,19 @@ AHCI/libata patch series even though both tracks share the tree.
 | --- | --- |
 | [`macos/scripts/set-gpu-power-prefs-intel.sh`](../../macos/scripts/set-gpu-power-prefs-intel.sh) | macOS: set Intel `gpu-power-prefs` |
 | [`scripts/graphics/check-intel-first-panel.sh`](../../scripts/graphics/check-intel-first-panel.sh) | Linux: read-only verify Intel panel path |
-| [`scripts/graphics/enable-intel-daily.sh`](../../scripts/graphics/enable-intel-daily.sh) | Install `force_igd` Intel UKI path, DDI 4-lane poke, Intel Xorg; keeps eDP-handoff **off** |
+| [`scripts/graphics/recreate-desktop.sh`](../../scripts/graphics/recreate-desktop.sh) | One entry: `lid` / `power` / `wayland` / `hyprland` / `omarchy` / `check` / `all` |
+| [`scripts/graphics/enable-intel-daily.sh`](../../scripts/graphics/enable-intel-daily.sh) | Install `force_igd` Intel UKI path, DDI 4-lane poke, Intel Xorg, desk power, Wayland DRM pin; keeps eDP-handoff **off** |
+| [`scripts/graphics/enable-wayland-intel.sh`](../../scripts/graphics/enable-wayland-intel.sh) | Plasma Wayland autologin (SDDM); restores via `disable-wayland-intel.sh` |
+| [`scripts/graphics/check-wayland-intel.sh`](../../scripts/graphics/check-wayland-intel.sh) | Read-only: seat0 Wayland + i915 eDP |
+| [`scripts/graphics/debian-initramfs-intel.sh`](../../scripts/graphics/debian-initramfs-intel.sh) | Debian initramfs-tools + cmdline tokens (refuses without `force_igd`) |
+| [`scripts/graphics/debian-ukify-intel.sh`](../../scripts/graphics/debian-ukify-intel.sh) | Debian UKI via `ukify` |
 | [`scripts/graphics/retinaforge-i915-ddi-4lanes.py`](../../scripts/graphics/retinaforge-i915-ddi-4lanes.py) | Write Haswell `DDI_A_4_LANES` then load i915 |
 | [`scripts/graphics/retinaforge-keep-display-awake.sh`](../../scripts/graphics/retinaforge-keep-display-awake.sh) | X11 DPMS off using the user auth file |
 | [`scripts/graphics/prime-run`](../../scripts/graphics/prime-run) | `DRI_PRIME=1` wrapper: one OpenGL app on nouveau, Intel keeps the panel |
+| [`scripts/graphics/install-wayland-intel.sh`](../../scripts/graphics/install-wayland-intel.sh) | Pin compositors to `/dev/dri/intel-igpu` (no autologin change) |
 | [`apps/mbp-panel/`](../../apps/mbp-panel/README.md) | Tray plate: lid/mux/temps, Sleep/Wake, **Run on 750M** (no mux hops) |
-| [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | `extend` or `mirror` |
+| [`scripts/graphics/work-displays.sh`](../../scripts/graphics/work-displays.sh) | Wake 750M and list DRM connectors (native monitors; no layout) |
+| [`scripts/graphics/present-layout`](../../scripts/graphics/present-layout) | DisplayLink `extend` or `mirror` |
 | [`scripts/graphics/present-off`](../../scripts/graphics/present-off) | Stop DisplayLink; laptop only |
 
 ## Scope
@@ -62,19 +83,22 @@ dGPU power rails, external displays (including USB DisplayLink as a distinct
 path), thermals, and suspend experiments for the tested `MacBookPro11,3` with
 Iris Pro + GT 750M.
 
-## Verified recipe (2026-08-16)
+## Verified recipe (2026-08-16 lid, 2026-08-17 Wayland + Hyprland)
 
-Do **not** start from macOS NVRAM. The working Linux path is UKI `force_igd`
-+ DDI A 4-lane poke, then `check-intel-first-panel.sh`. Full cook-book:
+Do **not** start from macOS NVRAM. Full cook-book:
+[`recreate.md`](recreate.md). Lid detail:
 [`intel-first-repro.md`](intel-first-repro.md).
 
 1. EFI-stub / UKI boot (`apple_set_os`).
 2. `apple_gmux.force_igd=1` (CachyOS apple-gmux patch).
 3. Set `DDI_A_4_LANES` before i915 probes; then load i915.
 4. Confirm `i915drmfb` and eDP 2880×1800.
-5. Optional OpenGL offload: `DRI_PRIME=1` / `prime-run` (nouveau, Intel keeps
-   the lid). Optional cooler idle: switcheroo `OFF` (disables that offload).
-6. DisplayLink only for short presenting; not native GT 750M outputs.
+5. Daily session: Plasma Wayland (`enable-wayland-intel.sh`) **or**
+   Hyprland (`recreate-desktop.sh hyprland`). Plasma X11 remains
+   recovery (`disable-wayland-intel.sh`). Omarchy: [`omarchy.md`](omarchy.md).
+6. Optional OpenGL offload: `DRI_PRIME=1` / `prime-run`. Desk monitors:
+   leave the 750M powered. Native HDMI/TB stay on that chip. USB
+   DisplayLink is a separate, hotter path.
 
 ## Hard stops
 

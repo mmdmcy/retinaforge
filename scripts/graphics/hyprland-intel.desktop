@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Hyprland (Intel)
+Comment=Hyprland on Iris Pro (MacBookPro11,3)
+Exec=/usr/local/bin/retinaforge-hyprland-intel
+TryExec=/usr/bin/Hyprland
+Type=Application
+DesktopNames=Hyprland

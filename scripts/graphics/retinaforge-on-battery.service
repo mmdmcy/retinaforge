@@ -1,0 +1,6 @@
+[Unit]
+Description=RetinaForge: on-battery (re-evaluate desk vs commute)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/retinaforge-on-battery.sh

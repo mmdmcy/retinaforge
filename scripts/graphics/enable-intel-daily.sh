@@ -51,6 +51,8 @@ install -Dm644 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes-display-man
 install -Dm644 "${root}/scripts/graphics/retinaforge-i915-ddi-4lanes-display-manager.conf" \
 	/etc/systemd/system/sddm.service.d/retinaforge-ddi-4lanes.conf
 systemctl daemon-reload
+install -d /etc/retinaforge
+printf 'intel-panel\n' >/etc/retinaforge/intel-panel
 systemctl enable retinaforge-i915-ddi-4lanes.service
 
 # Keep NVIDIA LTS as a numbered recovery entry. Do not rewrite Limine here:
@@ -58,8 +60,11 @@ systemctl enable retinaforge-i915-ddi-4lanes.service
 install -Dm755 "${root}/scripts/graphics/retinaforge-log-gpu-policy.sh" /usr/local/sbin/retinaforge-log-gpu-policy.sh
 install -Dm644 "${root}/scripts/graphics/retinaforge-log-gpu-policy.service" /etc/systemd/system/retinaforge-log-gpu-policy.service
 systemctl enable retinaforge-log-gpu-policy.service
-/usr/local/sbin/gmux-backlight-max.sh 2>/dev/null || "${root}/scripts/graphics/gmux-backlight-max.sh"
+bash "${root}/scripts/graphics/install-work-power.sh"
+bash "${root}/scripts/graphics/install-wayland-intel.sh"
+/usr/local/sbin/retinaforge-gmux-backlight-floor.sh 2>/dev/null || \
+	"${root}/scripts/graphics/retinaforge-gmux-backlight-floor.sh"
 
 depmod -a
-echo "Intel-daily target config installed (DDI 4-lane poke + Intel Xorg)."
-echo "Rebuild the UKI with SKIP_LIMINE=1, then reboot the Intel UKI entry."
+echo "Intel-daily target config installed (DDI 4-lane poke + Intel Xorg + desk power + Wayland DRM pin)."
+echo "Rebuild the UKI, reboot it, then: sudo ${root}/scripts/graphics/enable-wayland-intel.sh"

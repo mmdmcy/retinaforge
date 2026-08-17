@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+if command -v dolphin >/dev/null 2>&1; then
+	exec dolphin
+fi
+if command -v thunar >/dev/null 2>&1; then
+	exec thunar
+fi
+if command -v nautilus >/dev/null 2>&1; then
+	exec nautilus
+fi
+exec /usr/local/bin/retinaforge-hypr-term

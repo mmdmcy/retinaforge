@@ -1,0 +1,13 @@
+#!/bin/sh
+# Application launcher.
+set -eu
+if command -v wofi >/dev/null 2>&1; then
+	exec wofi --show drun
+fi
+if command -v fuzzel >/dev/null 2>&1; then
+	exec fuzzel
+fi
+if command -v rofi >/dev/null 2>&1; then
+	exec rofi -show drun
+fi
+exec /usr/local/bin/retinaforge-hypr-term

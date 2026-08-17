@@ -1,0 +1,4 @@
+# AC adapter change: start oneshots without blocking udev (SYSTEMD_WANTS
+# does not re-run on an already-active power_supply device).
+ACTION=="change", SUBSYSTEM=="power_supply", ENV{POWER_SUPPLY_TYPE}=="Mains", ENV{POWER_SUPPLY_ONLINE}=="0", RUN+="/bin/systemctl --no-block start retinaforge-on-battery.service"
+ACTION=="change", SUBSYSTEM=="power_supply", ENV{POWER_SUPPLY_TYPE}=="Mains", ENV{POWER_SUPPLY_ONLINE}=="1", RUN+="/bin/systemctl --no-block start retinaforge-on-ac.service"

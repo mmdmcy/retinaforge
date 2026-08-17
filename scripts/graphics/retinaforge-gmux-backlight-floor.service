@@ -1,0 +1,11 @@
+[Unit]
+Description=RetinaForge: gmux backlight floor on Intel UKI (never force max)
+After=systemd-udevd.service retinaforge-i915-ddi-4lanes.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/retinaforge-gmux-backlight-floor.sh
+
+[Install]
+WantedBy=multi-user.target

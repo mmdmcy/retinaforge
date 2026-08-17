@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pick a terminal that exists (Plasma, Omarchy, Debian).
+set -eu
+for t in kitty foot alacritty konsole gnome-terminal; do
+	if command -v "$t" >/dev/null 2>&1; then
+		exec "$t"
+	fi
+done
+exec xterm

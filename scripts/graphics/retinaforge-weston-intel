@@ -1,0 +1,38 @@
+#!/bin/sh
+# Weston on Iris Pro. Session (desktop shell) or SDDM greeter (--greeter).
+set -eu
+role=session
+if [ "${1:-}" = --greeter ]; then
+	role=greeter
+	shift
+fi
+
+dev=/dev/dri/intel-igpu
+if [ ! -e "$dev" ]; then
+	echo "retinaforge-weston-intel: missing $dev" >&2
+	exit 1
+fi
+card=$(basename "$(readlink -f "$dev")")
+
+export XDG_SESSION_TYPE=wayland
+export WLR_DRM_DEVICES="$dev"
+export KWIN_DRM_DEVICES="$dev"
+
+help=$(weston --help 2>&1 || true)
+set -- --backend=drm --idle-time=0 --config=/usr/local/share/retinaforge/weston-intel.ini
+case "$help" in
+	*drm-device*) set -- "$@" --drm-device="$card" ;;
+esac
+case "$help" in
+	*current-mode*) set -- "$@" --current-mode ;;
+esac
+if [ "$role" = greeter ]; then
+	case "$help" in
+		*kiosk-shell*) set -- "$@" --shell=kiosk-shell.so ;;
+		*kiosk*) set -- "$@" --shell=kiosk ;;
+	esac
+	case "$help" in
+		*continue-without-input*) set -- "$@" --continue-without-input ;;
+	esac
+fi
+exec weston "$@"

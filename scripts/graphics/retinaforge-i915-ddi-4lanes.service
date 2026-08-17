@@ -3,7 +3,8 @@ Description=RetinaForge: force Haswell DDI A 4 lanes before i915
 DefaultDependencies=no
 After=systemd-modules-load.service sysinit.target
 Before=display-manager.service sddm.service
-ConditionKernelCommandLine=apple_gmux.force_igd=1
+ConditionKernelCommandLine=|apple_gmux.force_igd=1
+ConditionPathExists=|/etc/retinaforge/intel-panel
 ConditionPathExists=/sys/bus/pci/devices/0000:00:02.0/resource0
 ConditionPathExists=!/etc/retinaforge/skip-ddi-4lanes
 

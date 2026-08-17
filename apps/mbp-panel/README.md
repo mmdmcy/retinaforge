@@ -38,10 +38,12 @@ sudo /usr/local/sbin/retinaforge-mbp-panel-start-on-seat
 The desktop file is also copied to `/etc/xdg/autostart/` so the jewel
 returns after login.
 
-The **?** on the plate is the field card: what this toggle is for (unused
-750M power only), when sage/idle is correct, **Run on 750M** vs Proton on
-Intel, and what belongs on the NVIDIA LTS boot instead. The long form is
-[`docs/graphics/max-value-and-omarchy.md`](../../docs/graphics/max-value-and-omarchy.md).
+The **?** on the plate is the field card: unused 750M power, when amber
+(desk / monitors) is correct, **Run on 750M** vs Proton on Intel, and
+what belongs on the NVIDIA LTS boot instead. Long form:
+[`docs/graphics/max-value-and-omarchy.md`](../../docs/graphics/max-value-and-omarchy.md),
+desk vs commute:
+[`docs/graphics/work-battery.md`](../../docs/graphics/work-battery.md).
 
 `install.sh` refuses to guess a Qt binding. Polkit lets a local active
 `wheel` or `sudo` session run the helper without a password prompt. The

@@ -1,6 +1,27 @@
 # Next Session Handoff
 
-Last updated: 2026-08-16 — **Intel i915 panel path works**
+Last updated: 2026-08-17 — **Hyprland 0.56 on the Intel lid; Omarchy is a port**
+
+## Session wrap (2026-08-17, night)
+
+Plasma Wayland (morning) and Hyprland 0.56 (evening) both sit on the
+Intel UKI lid. Hyprland overlay was three removed hyprlang keys
+(`tap`, `vfr`, `pseudotile`); `verify-config` → `config ok` after
+reload. Command = Super (`swap_opt_cmd=0`).
+
+**Omarchy next:** do not stock-ISO wipe the internal SSD. Skip LUKS.
+Keep macOS. Stock Arch kernels likely lack `force_igd`. After an
+Omarchy root exists: `recreate-desktop.sh omarchy`, then last line of
+`~/.config/hypr/hyprland.lua`:
+`dofile("/usr/local/share/retinaforge/hyprland-retinaforge.lua")`.
+Do not `source` the `.conf`. Do not run `enable-wayland-intel.sh` on
+Omarchy (SDDM). Cook-book: `docs/graphics/omarchy.md`.
+
+MacBook is shut down; do not claim a live check until the next boot.
+
+Public docs: `docs/graphics/hyprland.md`, `docs/graphics/omarchy.md`,
+`docs/source-notes/2026-08-17-hyprland.md`,
+`docs/source-notes/2026-08-17-plasma-wayland.md`.
 
 ## Session wrap (2026-08-16, evening)
 
@@ -43,12 +64,13 @@ PORT_A as 2-lane; 2880×1800 is `CLOCK_HIGH`. Full record:
 | `scripts/graphics/retinaforge-i915-ddi-4lanes.py` | MMIO poke + i915 load |
 | `scripts/graphics/enable-intel-edp-handoff.sh` | Opt-in handoff profile only |
 
-**Resume:** Intel panel is the daily UKI default. OpenGL `DRI_PRIME=1` works
-with nouveau; that is not AGS. Omarchy is **fun only** on a spare disk/VM —
-never the stock ISO on the internal SSD (it would wipe macOS). Next optional
-work: suspend/resume, kernel DMI quirk, DIS `OFF` (conflicts with PRIME).
+**Resume:** Intel panel is the daily UKI default. Plasma Wayland and
+Hyprland 0.56 both work on that lid. OpenGL `DRI_PRIME=1` works with
+nouveau; that is not AGS. Omarchy is a **port** (`docs/graphics/omarchy.md`)
+— never the stock ISO as a dedicated-drive wipe of the internal SSD.
 Keep NVIDIA LTS as fallback. Reproduce from
-`docs/graphics/intel-first-repro.md`, not from chat memory.
+`docs/graphics/recreate.md` / `docs/graphics/intel-first-repro.md`,
+not from chat memory.
 
 Private operational checklist for agents working this repository's lab machine.
 Public science and reproduction live in publishable docs under `docs/`. Do not

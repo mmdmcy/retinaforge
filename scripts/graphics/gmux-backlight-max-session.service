@@ -1,7 +1,8 @@
 [Unit]
-Description=Force GMUX backlight to max after the desktop session starts
+Description=Force GMUX backlight to max after the desktop session starts (NVIDIA LTS path only)
 After=display-manager.service
 Wants=display-manager.service
+ConditionKernelCommandLine=!apple_gmux.force_igd=1
 
 [Service]
 Type=oneshot

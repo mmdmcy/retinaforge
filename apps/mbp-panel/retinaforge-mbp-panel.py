@@ -504,10 +504,31 @@ class Plate(QWidget):
         )
         inner_lay.addWidget(
             _help_block(
-                "DAILY DESKTOP  ·  LEAVE IT",
-                "Browser, coding, video, ordinary windows: keep the 750M "
-                "asleep (sage jewel, Sleep greyed). Iris Pro is the display "
-                "GPU. Waking the 750M only adds heat.",
+                "WORK DESK  ·  MONITORS",
+                "Native HDMI and Thunderbolt outputs are on the 750M. At a "
+                "desk (AC, or any extra screen already connected) the 750M "
+                "stays awake — amber jewel is correct. Do not Sleep 750M "
+                "to “save heat” while you need those ports. USB DisplayLink "
+                "is a different, hotter path.",
+                KEPLER,
+            )
+        )
+        inner_lay.addWidget(
+            _help_block(
+                "NO COMMUTE PROFILE",
+                "This machine is not used on the road, so it does not "
+                "auto-sleep the 750M or drop to power-saver when you unplug. "
+                "Brightness stays yours; Intel no longer forces gmux to max. "
+                "Do not re-enable i915 display C-states.",
+                COOL,
+            )
+        )
+        inner_lay.addWidget(
+            _help_block(
+                "LID-ONLY AT HOME",
+                "Browser and coding on the internal panel only: Sleep 750M "
+                "if you want less heat (sage jewel). Iris Pro is already "
+                "the display GPU.",
                 COOL,
             )
         )

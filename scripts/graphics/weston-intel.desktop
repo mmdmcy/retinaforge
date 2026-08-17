@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Weston (Intel)
+Comment=Weston DRM on Iris Pro (MacBookPro11,3)
+Exec=/usr/local/bin/retinaforge-weston-intel
+TryExec=/usr/bin/weston
+Type=Application
+DesktopNames=Weston

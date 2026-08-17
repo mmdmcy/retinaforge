@@ -18,9 +18,9 @@ help **pro GPU jobs** (timeline effects, filters, some CAD/OpenCL). The
 doors, not the product.
 
 Omarchy/Hyprland would look **good on this panel for the same reason**
-the resolution exists: dense UI. That is not a reason to run the stock
-Omarchy ISO against the internal SSD. Porting notes:
-[`max-value-and-omarchy.md`](max-value-and-omarchy.md).
+the resolution exists: dense UI. Hyprland on this lid is already
+proven. That is still not a reason to run the stock Omarchy ISO against
+the internal SSD. Install cook-book: [`omarchy.md`](omarchy.md).
 
 ## How 3D actually works on the Linux daily boot
 
@@ -71,6 +71,6 @@ X11 DPMS was already **off** (keep-awake helper running; `xset` timeout
 normal flash. i915 logs `Skipping intel_backlight registration` on this
 path, so Plasma may be poking **apple-gmux** brightness.
 
-That is a next-session item (PowerDevil vs `gmux-backlight-max`), not a
-mux hop and not “the 750M must stay on.” Do not send `IGD`/`DIS` to
-chase it.
+That is PowerDevil poking **apple-gmux** brightness, not a reason to
+leave the 750M powered. The Intel path no longer force-maxes gmux
+(`work-battery.md`). Do not send `IGD`/`DIS` to chase a flash.

@@ -48,7 +48,7 @@ set -euo pipefail
 cd "${ROOT_ON_LINUX}"
 sudo "${ROOT_ON_LINUX}/scripts/graphics/enable-intel-daily.sh"
 sudo "${ROOT_ON_LINUX}/scripts/graphics/limine-set-default-uki.sh"
-sudo /usr/local/sbin/gmux-backlight-max.sh 2>/dev/null || sudo "${ROOT_ON_LINUX}/scripts/graphics/gmux-backlight-max.sh"
+sudo /usr/local/sbin/retinaforge-gmux-backlight-floor.sh 2>/dev/null || sudo "${ROOT_ON_LINUX}/scripts/graphics/retinaforge-gmux-backlight-floor.sh"
 sudo efibootmgr -n 0080
 echo "scheduled one-shot boot -> macOS (0080)"
 EOF

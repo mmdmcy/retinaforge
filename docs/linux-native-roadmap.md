@@ -20,7 +20,7 @@ acceptance gates. Passing one does not imply the other passes.
 | Linux legacy-INTx | Authenticated Linux `v7.1.3` was stable but reproduced roughly 1.1-second flush tails during the heavier ext4 and dm-crypt workload | Stable is not fast enough for a daily Linux root volume. |
 | Linux MSI plus NCQ | Bounded reads passed, but writable queue-depth-32 testing produced three timeout/reset waves | Preserve the upstream no-MSI rule for writable NCQ. |
 | Windows graphics probe | Apple Set OS exposed Iris Pro and started the Intel driver, but NVIDIA retained the panel | The Intel GPU is firmware-accessible; this does not prove panel routing or rail-off. |
-| Linux graphics | Upstream has Apple Set OS, `i915`, `apple-gmux`, and VGA switcheroo support. Repeatable Intel panel ownership (2026-08-16): `force_igd` plus a pre-i915 `DDI_A_4_LANES` poke yields `i915drmfb` 2880×1800. NVIDIA LTS remains SSH recovery only. | Linux is the chosen non-macOS graphics route. Keep the discrete Limine entry for recovery; do not copy Big Sur AGS. |
+| Linux graphics | Repeatable Intel panel (2026-08-16): `force_igd` plus a pre-i915 `DDI_A_4_LANES` poke yields `i915drmfb` 2880×1800. Plasma Wayland (2026-08-17, `KWIN_DRM_NO_AMS=1`) and Hyprland 0.56 (same evening, `AQ_NO_ATOMIC=1`, Command = Super) both sit on that lid. NVIDIA LTS remains SSH recovery only. | Linux is the chosen non-macOS graphics route. Keep the discrete Limine entry for recovery; do not copy Big Sur AGS. Recreate: `docs/graphics/recreate.md`. Omarchy is a port (`docs/graphics/omarchy.md`), not a stock ISO wipe. |
 
 ## Existing Assets
 

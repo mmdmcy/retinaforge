@@ -1,0 +1,15 @@
+* {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 13px;
+  color: #e8e6e1;
+  background: #1c1b19;
+  border: none;
+}
+
+#workspaces button.active {
+  background: #3d3a36;
+}
+
+#clock, #battery, #pulseaudio, #tray {
+  padding: 0 10px;
+}

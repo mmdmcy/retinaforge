@@ -1,9 +1,9 @@
 # Intel-first Linux panel reproduction — MacBookPro11,3
 
-**What works today (verified 2026-08-16, survived a UKI reboot):**
-Intel `i915` owns the internal Retina panel at 2880×1800 (`i915drmfb`),
-Plasma X11 on Iris Pro. Optional: one OpenGL app on the GT 750M via
-`DRI_PRIME=1` without moving the GMUX.
+**What works today (verified 2026-08-16 lid, 2026-08-17 Plasma Wayland):**
+Intel `i915` owns the internal Retina panel at 2880×1800 (`i915drmfb`).
+Plasma Wayland on Iris Pro (`KWIN_DRM_NO_AMS=1`). Optional: one OpenGL
+app on the GT 750M via `DRI_PRIME=1` without moving the GMUX.
 
 This is a cook-book for `MacBookPro11,3` (Iris Pro `8086:0d26` + GT 750M
 `10de:0fe9` + indexed Apple GMUX 4.0.8). Do not generalize to other
@@ -45,9 +45,13 @@ From a clone of this repo, as root, on the **current Intel kernel**
 (not LTS — `build-apple-set-os-uki.sh` defaults to `uname -r`):
 
 ```bash
-sudo scripts/graphics/enable-intel-daily.sh
+sudo ./scripts/graphics/recreate-desktop.sh lid
 sudo SKIP_LIMINE=1 KVER=7.1.5-1-cachyos scripts/graphics/build-apple-set-os-uki.sh
 ```
+
+(Or `sudo scripts/graphics/enable-intel-daily.sh` — same lid installer.)
+
+Ordered CachyOS **and** Debian cook-book: [`recreate.md`](recreate.md).
 
 Then point Limine `default_entry` at the **Intel UKI** leaf. Keep a
 numbered **NVIDIA LTS** recovery entry. **Do not** run
@@ -66,9 +70,14 @@ the UKI to entry 1.
 | `/etc/systemd/system/sddm.service.d/retinaforge-ddi-4lanes.conf` | `After=` / `Wants=` the poke |
 | `/etc/X11/xorg.conf.d/40-intel-panel.conf` | modesetting, `BusID PCI:0:2:0`, `kmsdev` by-path |
 | `/etc/X11/xorg.conf.d/50-disable-nvidia.conf` | ignore packaged NVIDIA OutputClass |
+| `/etc/retinaforge/intel-panel` | stamp: DDI poke may run without the CachyOS cmdline token |
+| `install-work-power.sh` | desk: 750M stays on for monitors (`work-battery.md`) |
+| `install-wayland-intel.sh` | `/dev/dri/intel-igpu` + KWin DRM env (autologin unchanged) |
 
-The oneshot is `ConditionKernelCommandLine=apple_gmux.force_igd=1`, so a
-Limine NVIDIA LTS boot skips it.
+The DDI oneshot runs if **either** `apple_gmux.force_igd=1` is on the
+cmdline **or** `/etc/retinaforge/intel-panel` exists, so a Debian UKI
+can use the stamp. NVIDIA recovery must remove that stamp
+(`disable-nvidia-off.sh`).
 
 It also **disables** the eDP-handoff unit (that profile can wedge SSH).
 
@@ -176,16 +185,22 @@ Required on any reinstall:
 4. The DDI A 4-lane poke (userspace script, or the unbuilt DMI quirk in
    `patches/0003-i915-mbp11-3-ddi-a-4-lanes.patch`).
 5. i915 delayed until after that poke.
-6. Xorg (or a compositor) pinned to `PCI:0:2:0`, NVIDIA OutputClass
-   ignored. This lab proved **X11**. Hyprland/Wayland is untested here.
+6. Xorg **or** Plasma Wayland **or** Hyprland pinned to Iris Pro
+   (`/dev/dri/intel-igpu`). NVIDIA OutputClass ignored. Plasma:
+   [`wayland.md`](wayland.md) (`KWIN_DRM_NO_AMS=1`). Hyprland:
+   [`hyprland.md`](hyprland.md) (`AQ_NO_ATOMIC=1`). Omarchy port:
+   [`omarchy.md`](omarchy.md). `disable-wayland-intel.sh` restores
+   Plasma X11 on the CachyOS/SDDM path.
 7. `check-intel-first-panel.sh` must pass. PCI presence is not enough.
 
-**Omarchy:** later as a **manual** dual-boot only. Do **not** use the stock
+**Omarchy:** Hyprland on this lid is proven; the ISO is still a
+**manual** dual-boot / replace-Linux-only port. Do **not** use the stock
 ISO against the internal SSD as a dedicated-drive wipe. Quattro’s “Free
 space” dual-boot is documented for Windows-style leftover space; shrink
 **APFS from macOS**, never from Linux. Keep a macOS partition (recovery
 when the lid goes black). Skip LUKS on this SSD. Port `force_igd` + DDI
-poke; Wayland is untested. Written down:
+poke; then `dofile` the Lua hardware pin. Written down:
+[`omarchy.md`](omarchy.md),
 [`max-value-and-omarchy.md`](max-value-and-omarchy.md).
 
 ## Daily controls (tray plate)
@@ -208,9 +223,19 @@ retinaforge-mbp-panel &
 
 ## External displays
 
-USB DisplayLink can drive 1080p panels with GT 750M left off; hot if
-sustained. Native Thunderbolt/DP-style outputs still imply the discrete
-GPU and are a separate experiment.
+Native HDMI / Thunderbolt-style outputs on this chassis stay on the
+**GT 750M** even when the lid is Intel. Keep that chip **powered** at a
+desk (`sudo ./scripts/graphics/install-work-power.sh`, then the desktop
+display settings). `sudo retinaforge-work-displays.sh` wakes it and
+lists connectors; it does not place screens.
+
+USB DisplayLink can drive 1080p panels with the 750M left off; hot if
+sustained. That is `present-on`, not the work-dock path.
+
+Debian port (pinned kernel, same recipes):
+[`debian-workstation.md`](debian-workstation.md).
+Desk power (750M stays on):
+[`work-battery.md`](work-battery.md).
 
 ## Historical record (not the recipe)
 
@@ -224,6 +249,8 @@ GPU and are a separate experiment.
   [`docs/source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md`](../source-notes/2026-08-10-uki-intel-attempt-and-xorg-fail.md)
 - 08-01 UKI retest:
   [`docs/source-notes/2026-08-13-historical-uki-retest.md`](../source-notes/2026-08-13-historical-uki-retest.md)
+- Plasma Wayland (2026-08-17):
+  [`docs/source-notes/2026-08-17-plasma-wayland.md`](../source-notes/2026-08-17-plasma-wayland.md)
 
 macOS NVRAM scripts remain in `macos/scripts/` for Apple-side experiments.
 They are **not** why the 2026-08-16 Linux desktop works.

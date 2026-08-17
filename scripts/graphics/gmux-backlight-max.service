@@ -1,7 +1,8 @@
 [Unit]
-Description=Force GMUX backlight to max at boot
+Description=Force GMUX backlight to max at boot (NVIDIA LTS path only)
 After=systemd-udevd.service
 Before=display-manager.service
+ConditionKernelCommandLine=!apple_gmux.force_igd=1
 
 [Service]
 Type=oneshot

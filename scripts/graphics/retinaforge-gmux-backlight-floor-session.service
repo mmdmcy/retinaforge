@@ -1,0 +1,12 @@
+[Unit]
+Description=RetinaForge: gmux backlight floor after session (Intel UKI, never force max)
+After=display-manager.service
+Wants=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 8
+ExecStart=/usr/local/sbin/retinaforge-gmux-backlight-floor.sh
+
+[Install]
+WantedBy=graphical.target

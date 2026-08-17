@@ -1,0 +1,10 @@
+#!/bin/sh
+# Start Hyprland on Iris Pro only (symlink from 61-retinaforge-intel-drm.rules).
+set -eu
+export AQ_DRM_DEVICES=/dev/dri/intel-igpu
+export AQ_NO_ATOMIC=1
+export WLR_DRM_DEVICES=/dev/dri/intel-igpu
+export KWIN_DRM_DEVICES=/dev/dri/intel-igpu
+export KWIN_DRM_NO_AMS=1
+export XDG_SESSION_TYPE=wayland
+exec Hyprland --config /usr/local/share/retinaforge/hyprland-intel.conf

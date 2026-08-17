@@ -1,0 +1,17 @@
+[Unit]
+Description=RetinaForge: desk vs commute GPU/power policy (Intel lid)
+After=retinaforge-i915-ddi-4lanes.service retinaforge-gmux-nouveau.service display-manager.service
+Wants=retinaforge-i915-ddi-4lanes.service
+StartLimitIntervalSec=60
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/sbin/retinaforge-power-policy.sh apply
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

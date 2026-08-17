@@ -1,0 +1,6 @@
+[Unit]
+Description=RetinaForge: on-AC (wake 750M for monitors, balanced)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/retinaforge-on-ac.sh

@@ -25,12 +25,15 @@ too. Powered-but-unused DIS is extra heat for the same picture.
 
 ## Daily (no reboot)
 
-1. Boot the **Intel UKI** (Limine default on this workbench).
-2. Jewel **sage** = 750M asleep. Leave it.
+1. Boot the **Intel UKI**. Daily session is **Plasma Wayland** or
+   **Hyprland** on Iris Pro ([`hyprland.md`](hyprland.md)).
+2. Jewel **amber** at a desk is correct: the 750M stays up for HDMI/TB.
+   Jewel **sage** only after you **Sleep 750M** yourself.
 3. OpenGL app / native Linux Steam title: plate → type `glxgears` or
    `steam` (or **…** browse) → **Run on 750M**. That wakes the chip if
    needed and starts `DRI_PRIME=1` / `prime-run`.
-4. When that app exits: **Sleep 750M**.
+4. Lid-only at home: **Sleep 750M** if you want less heat. Do not sleep
+   it while you need native extra monitors.
 
 You do **not** need a reboot to use the 2 GB for OpenGL offload.
 
@@ -56,11 +59,16 @@ the Intel UKI again for daily use.
 Do not bind 470 on the Intel-lid session. Do not look for a 470 toggle
 on the plate.
 
-## Omarchy (later, not a wipe)
+## Omarchy (port after Hyprland, not a wipe)
 
-Omarchy is a **port**, not “boot the ISO and replace CachyOS.”
+Hyprland on this Intel lid is **already proven**
+([`hyprland.md`](hyprland.md)). Omarchy 4 is extra rice on Arch. It is
+**not** “boot the ISO and replace the whole SSD.”
 
-Hard stops:
+The install cook-book (hard stops, `force_igd`, Lua `dofile`, skip
+LUKS, keep macOS) is [`omarchy.md`](omarchy.md).
+
+Short hard stops:
 
 - **Do not** run the stock Omarchy ISO against this internal Apple SSD
   as a dedicated-drive install. That wipes the disk, including macOS.
@@ -69,18 +77,20 @@ Hard stops:
   at Windows. This machine is **APFS + Linux**, not BitLocker/NTFS.
   Do not let an installer “pick the Apple SSD” unless you have already
   created free space **from macOS Disk Utility** and you are choosing
-  **only that free space**.
+  **only that free space** (or replacing the existing Linux partition
+  only).
 - Do not shrink APFS from Linux.
 - On this SSD, lab probes showed **ext4-on-dm-crypt** ~1.1 s durable
   sync tails. The working graphics install is **unencrypted ext4**.
   Skip LUKS here (`Ctrl+C` on Omarchy’s disk-format confirm, or a
   manual Arch install). Skipping LUKS does **not** skip the graphics
   stack.
-- Omarchy is Hyprland/Wayland. This lab proved **X11** on i915.
-  Wayland is untested. Stock Arch kernels may **lack** CachyOS
-  `apple_gmux.force_igd`. Without that (or an equivalent mux switch
-  before i915) plus the DDI A 4-lane poke, you get a black lid or
-  0 DRM modes.
+- Stock Arch kernels may **lack** CachyOS `apple_gmux.force_igd`.
+  Without that plus the DDI poke, Omarchy never sees 2880×1800. After
+  an Omarchy userspace exists, `recreate-desktop.sh omarchy` then
+  `dofile("/usr/local/share/retinaforge/hyprland-retinaforge.lua")`
+  last in `~/.config/hypr/hyprland.lua`. Keep the Intel UKI. Do not
+  `source` the old `.conf` into Lua.
 
 Required on any reinstall (same as
 [`intel-first-repro.md`](intel-first-repro.md)):
@@ -89,8 +99,10 @@ Required on any reinstall (same as
 2. EFI-stub / UKI so `apple_set_os()` runs.
 3. `force_igd` (or equivalent) **before** i915.
 4. DDI A 4-lane poke, then load i915.
-5. Compositor/Xorg on `PCI:0:2:0`.
+5. Compositor on Iris Pro (`KWIN_DRM_NO_AMS=1` / `AQ_NO_ATOMIC=1` /
+   `intel-igpu`).
 6. `check-intel-first-panel.sh` must pass.
+7. Rebuild: [`recreate.md`](recreate.md).
 
 Fun-only Omarchy belongs on a spare disk or VM until that list is
 ported. Manual dual-boot into **pre-shrunk free space** is the only

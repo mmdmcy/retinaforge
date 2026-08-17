@@ -1,0 +1,11 @@
+#!/bin/sh
+# Brightness on gmux (this chassis) or intel_backlight. Never pass 0.
+set -eu
+dev=gmux_backlight
+if [ ! -d /sys/class/backlight/$dev ]; then
+	dev=intel_backlight
+fi
+if command -v brightnessctl >/dev/null 2>&1 && [ -d /sys/class/backlight/$dev ]; then
+	exec brightnessctl -d "$dev" set "$@"
+fi
+exit 0
