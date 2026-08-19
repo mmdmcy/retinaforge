@@ -1,18 +1,35 @@
 # Omarchy on this MacBookPro11,3
 
+**Accepted daily (2026-08-19):** stock Omarchy 4 on this chassis.
+Hyprland 0.56, lid on **nouveau** at 2880×1800, LUKS2+btrfs, wifi `wl`.
+**Leave it.** Do not port `force_igd`. Do not run RetinaForge Intel or
+SDDM session installers against this root.
+
+Wrap-up:
+[`../source-notes/2026-08-19-omarchy-daily.md`](../source-notes/2026-08-19-omarchy-daily.md).
+Durable sync:
+[`../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
+
 Omarchy 4 (“Quattro”) is a Hyprland rice on Arch with a Quickshell
-desktop. It is **not** a shortcut around the mux. Hyprland already
-modesets this Intel lid on CachyOS (2026-08-17). What Omarchy still has
-to inherit is the **same lid recipe**, then a Lua hardware pin so their
-rice keeps its looks.
+desktop. It is **not** a shortcut around the mux. An Intel lid was
+proven on **CachyOS** (2026-08-17). That recipe is archived below. The
+live Omarchy desktop does **not** need it.
 
 Cook-book siblings: [`recreate.md`](recreate.md) (layers),
-[`hyprland.md`](hyprland.md) (what we proved),
-[`intel-first-repro.md`](intel-first-repro.md) (why the panel is 2880×1800).
+[`hyprland.md`](hyprland.md) (CachyOS Hyprland),
+[`intel-first-repro.md`](intel-first-repro.md) (historical Intel panel).
 
 ## Ready vs not ready
 
-**Ready (proven on this chassis, 2026-08-17):**
+**Ready (this Omarchy install, 2026-08-19) — do not change:**
+
+- Limine UKI boot, Hyprland 0.56, eDP **2880×1800** on **nouveau**
+  (`DIS:+`).
+- LUKS2 + btrfs; userspace `fdatasync` ~8 ms.
+- BCM4360 with the `wl` module.
+
+**Archived (CachyOS Intel lid, 2026-08-16/17) — do not port unless
+explicitly asked:**
 
 - Intel UKI lid: `apple_gmux.force_igd=1` + DDI A 4-lane poke +
   `i915.enable_dc=0` → `i915drmfb`, eDP-2 2880×1800.
@@ -20,26 +37,21 @@ Cook-book siblings: [`recreate.md`](recreate.md) (layers),
 - Command (⌘) = Super (`hid_apple swap_opt_cmd=0`).
 - Hardware snippet: `/usr/local/share/retinaforge/hyprland-retinaforge.lua`.
 
-**Not ready until you do it on the Omarchy root:**
-
-- A kernel whose `apple-gmux` has `force_igd`
-  (`modinfo apple-gmux | grep force_igd`). Stock Arch/Omarchy kernels
-  usually **do not**.
-- An **EFI-stub / UKI** boot of that kernel (GRUB `linux` skipped
-  `apple_set_os()` here).
-- The DDI poke **before** i915, then `check-intel-first-panel.sh`.
-
-If those three are missing, Omarchy’s Hyprland never sees a 2880×1800
-mode. The ISO looking pretty on another laptop does not change that.
+Stock Arch/Omarchy `apple-gmux` has **no `force_igd`**. That is why the
+Intel path is a patched kernel, not a Hyprland setting. The daily
+picture does not need it.
 
 ## Hard stops
 
 - Do **not** let the installer take the whole internal Apple SSD
   (dedicated-drive wipe). That erases **macOS**.
 - Shrink **APFS only from macOS Disk Utility**. Never from Linux.
-- Skip **LUKS** on this SSD (lab: ext4-on-dm-crypt ~1.1 s durable sync
-  tails). Omarchy defaults to encryption; `Ctrl+C` the format confirm
-  or pick unencrypted ext4/btrfs.
+- Omarchy 4 **defaults to LUKS2**. On this SSD that is acceptable **when
+  the filesystem on the mapper is btrfs** (Omarchy’s default). The ~1.1 s
+  tax was **ext4-on-dm-crypt**, not LUKS itself. 2026-08-19 userspace
+  probe: 64×1 MiB `fdatasync` median 8.4 ms.
+  [`2026-08-19-omarchy-luks-btrfs-sync.md`](../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
+  Do **not** put ext4 on dm-crypt here. Do not disable barriers.
 - Quattro’s “dual-boot when free space exists” text is aimed at
   **Windows + BitLocker**. This machine is **APFS + Linux**. Free space
   must already exist, created from macOS, and the installer must use
@@ -54,28 +66,103 @@ Keep a bootable Big Sur APFS even if you never log in. When a Linux
 graphics experiment blacks the lid, Option / Startup Manager is the
 recovery that SSH cannot replace.
 
+## Installer disk map (this 1 TB GPT)
+
+CachyOS trouble on this chassis was almost certainly **boot/ESP**, not
+needing a huge swap partition. Omarchy does **not** want a dedicated
+swap slice at install. It uses **zram** in RAM. Hibernate is optional
+later (`/swap` subvolume = size of RAM, 16 GB here) — skip it on night
+one.
+
+Do **not** reuse Apple’s EFI (`disk0s1`, ~210 MB) as Linux `/boot`. It
+is too small, and it is macOS. Omarchy wants **one** FAT32 partition
+that is both the ESP **and** `/boot` (not `/boot/efi`). Limine puts
+kernels next to `limine.conf` there.
+
+Target after the 2026-08-19 APFS shrink and CachyOS delete (the hole the
+installer filled; live layout is in section A below):
+
+| Slice | Size | Role |
+| --- | --- | --- |
+| Apple EFI | 210 MB | macOS only. Do not format. Do not mount as `/boot`. |
+| APFS | 80 GB | Big Sur recovery (~45 GB used). |
+| **Free** | **~920 GB** | **Omarchy goes only here.** |
+
+### What the installer should create in that ~920 GB hole
+
+| Partition | Size | FS | Mount | Flags |
+| --- | --- | --- | --- | --- |
+| Omarchy ESP/boot | **2 GiB** (1 GiB is the documented minimum; 500 MB ran out on an Intel Mac) | FAT32 | **`/boot`** | `boot`, `esp` |
+| Omarchy root | rest of the hole | **LUKS2** → btrfs, `compress=zstd` | subvolumes below | Linux filesystem |
+| swap partition | **none** | — | zram | — |
+
+Btrfs subvolumes Omarchy expects:
+
+| Subvolume | Mount |
+| --- | --- |
+| `@` | `/` |
+| `@home` | `/home` |
+| `@log` | `/var/log` |
+| `@pkg` | `/var/cache/pacman/pkg` |
+
+Omarchy 4 **turns LUKS2 on** unless you `Ctrl+C` the format/encryption
+confirm (the disk-pick confirm is not that toggle). **Keep that
+default.** **btrfs on LUKS2** is the stack that stayed
+millisecond-class here; **ext4 on dm-crypt** is the stack that paid
+~1.1 s. Recreate:
+[`2026-08-19-omarchy-luks-btrfs-sync.md`](../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
+
+Bootloader: **Limine**, onto **that new 2 GiB `/boot`**, not the USB
+and not Apple EFI. If the ISO offers **Free space install (alongside
+existing data)**, that is the **~920 GB** gap — confirm the summary
+does **not** list the whole 1 TB disk or the 80 GB APFS.
+
+Classic installer errors from last time:
+
+| Message | Actual cause |
+| --- | --- |
+| Boot partition not found / ESP not found | `/boot` missing, or FAT32 lacks **both** `boot` and `esp`, or you mounted `/boot/efi` instead of `/boot` |
+| No valid Limine configurations | `/boot` too small (use 2 GiB) or Limine installed to the USB |
+| Whole disk wiped | “Default partitioning layout” on the Apple SSD |
+
+CachyOS is already gone from this disk (2026-08-19). Option-boot macOS
+is the remaining local recovery. First Omarchy boot is NVIDIA/`nouveau`
+on the lid — that is the accepted daily.
+
+The working Intel UKI was copied onto the Mac APFS data volume before
+the shrink (not in git). Archived recipe only.
+
 ## Two install shapes
 
-### A. Replace CachyOS, keep macOS (likely what you mean)
+### A. Landed on this disk (2026-08-19)
 
-1. Confirm macOS still boots (Option). Time Machine / clone first if
-   anything on the Linux partition matters.
-2. From macOS Disk Utility, confirm the Linux partition vs APFS. Shrink
-   APFS **only** if you need a larger Linux slice.
-3. Boot the Omarchy 4 ISO. Choose **only** the existing Linux partition
-   (or the pre-shrunk free space). Never “the whole disk.” Skip LUKS.
-4. First boot may be a **black lid**. That is expected if the stock
-   kernel has no `force_igd`. SSH from another machine if you already
-   enabled it; otherwise boot macOS.
-5. On the Omarchy root, port the lid (next section), then the Lua pin.
+Free-space install into the hole after the APFS shrink. CachyOS is
+gone. Live Linux slices (sizes rounded):
 
-### B. Keep CachyOS (Hyprland already works)
+| Slice | Size | Role |
+| --- | --- | --- |
+| Apple EFI | 200 MiB vfat | macOS only |
+| APFS | ~75 GiB | Big Sur recovery |
+| Omarchy `/boot` | 2 GiB vfat | ESP + kernels (`boot`+`esp`) |
+| Omarchy root | ~855 GiB LUKS2 → `omarchy_root` btrfs | `@` `/`, `@home`, `@log` |
 
-You do not need Omarchy to “get Hyprland.” Fun-only Omarchy belongs on a
-**spare disk or VM** until path A has a passing
-`check-intel-first-panel.sh`.
+Never “the whole disk.” First boot is NVIDIA/`nouveau` at 2880×1800 —
+that is the **accepted daily**, not a gap. Durable sync on that btrfs
+home stayed ~8 ms (see the 2026-08-19 notes). If you reinstall, choose
+**only** leftover free space, keep LUKS2+btrfs, do not put ext4 on the
+mapper. Do not port `force_igd` unless explicitly asked.
 
-## After an Omarchy userspace exists
+### B. Keep CachyOS (not this machine anymore)
+
+CachyOS was removed here so Omarchy could take the Linux space. Fun-only
+Omarchy on a spare disk/VM is still the path if you are not ready to
+port `force_igd`.
+
+## After an Omarchy userspace exists (archived — do not run)
+
+The live daily is stock nouveau. The steps below were the **CachyOS
+Intel port**. They stay written so the science is not lost. **Do not
+run them** on the accepted Omarchy root.
 
 Order matters. Skip a layer and the next one is meaningless.
 

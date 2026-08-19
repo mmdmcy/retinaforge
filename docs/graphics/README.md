@@ -40,8 +40,11 @@ AHCI/libata patch series even though both tracks share the tree.
 - **Hyprland (Command as Super; 0.56 overlay fix; Omarchy Lua pin):**
   [`hyprland.md`](hyprland.md)
   ([lab note](../source-notes/2026-08-17-hyprland.md))
-- **Omarchy 4 install (keep macOS, skip LUKS, `force_igd`, Lua dofile):**
-  [`omarchy.md`](omarchy.md)
+- **Omarchy 4 daily (stock nouveau lid, leave it, 2026-08-19):**
+  [`omarchy.md`](omarchy.md),
+  [`../source-notes/2026-08-19-omarchy-daily.md`](../source-notes/2026-08-19-omarchy-daily.md)
+- **LUKS2 + btrfs durable sync (userspace, 2026-08-19):**
+  [`../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md)
 - **Gaming vs Retina (OpenGL list, why 2880×1800 exists):**
   [`gaming-and-retina.md`](gaming-and-retina.md)
 - Upstream graphics review:

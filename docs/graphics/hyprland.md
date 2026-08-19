@@ -109,7 +109,7 @@ Do not set xkb `applealu_iso` + `mac` on top of that hid map.
 Omarchy 4 configs are **Lua** (`~/.config/hypr/hyprland.lua`). A
 `source = …hyprland-retinaforge.conf` line does nothing there.
 
-Full order, hard stops, kernel/`force_igd`, skip LUKS, keep macOS:
+Full order, hard stops, kernel/`force_igd`, LUKS2+btrfs, keep macOS:
 [`omarchy.md`](omarchy.md).
 
 Short version after the Omarchy root exists and the Intel UKI lights

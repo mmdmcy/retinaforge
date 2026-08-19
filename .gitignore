@@ -24,11 +24,10 @@ __pycache__/
 .venv/
 venv/
 
-# Local working memory and machine-specific records
-docs/handoff.md
-docs/investigation-history.md
-docs/macos-reinstall-runbook.md
-docs/source-notes/2026-07-14-big-sur-daily-use-and-steam.md
+# Local one-off remote probes and tarballs (not cook-book)
+scripts/graphics/_*.sh
+scripts/graphics/_*.py
+scripts/graphics/_*.tar
 
 # Rejected local prototypes retained only as negative-result artifacts
 patches/0001-libata-allow-noncq-fua-for-apple-sm1024f.patch

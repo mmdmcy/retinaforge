@@ -2,8 +2,14 @@
 
 This is the written-down recipe for the Late-2013 15-inch Retina that
 RetinaForge actually tests (Iris Pro + GT 750M + indexed Apple GMUX).
-It is not a 2026-GPU wish list. It is how to use **both chips you already
-paid for** without blacking the lid.
+
+**Daily Linux (2026-08-19):** stock **Omarchy 4**, lid on **nouveau**,
+2880×1800. Leave that. Do not port Intel. Games: native OpenGL on the
+750M (no `DRI_PRIME`). Wrap-up:
+[`../source-notes/2026-08-19-omarchy-daily.md`](../source-notes/2026-08-19-omarchy-daily.md).
+
+The table below is the **archived CachyOS Intel-lid** layout, not the
+Omarchy daily boot.
 
 The tray plate (`apps/mbp-panel/`) is the daily control. The **?** on that
 plate is the short version of this file.
@@ -65,8 +71,8 @@ Hyprland on this Intel lid is **already proven**
 ([`hyprland.md`](hyprland.md)). Omarchy 4 is extra rice on Arch. It is
 **not** “boot the ISO and replace the whole SSD.”
 
-The install cook-book (hard stops, `force_igd`, Lua `dofile`, skip
-LUKS, keep macOS) is [`omarchy.md`](omarchy.md).
+The install cook-book (hard stops, `force_igd`, Lua `dofile`,
+LUKS2+btrfs not ext4-on-crypt, keep macOS) is [`omarchy.md`](omarchy.md).
 
 Short hard stops:
 
@@ -80,11 +86,11 @@ Short hard stops:
   **only that free space** (or replacing the existing Linux partition
   only).
 - Do not shrink APFS from Linux.
-- On this SSD, lab probes showed **ext4-on-dm-crypt** ~1.1 s durable
-  sync tails. The working graphics install is **unencrypted ext4**.
-  Skip LUKS here (`Ctrl+C` on Omarchy’s disk-format confirm, or a
-  manual Arch install). Skipping LUKS does **not** skip the graphics
-  stack.
+- On this SSD the ~1.1 s durable-sync tax is **ext4-on-dm-crypt**, not
+  LUKS by itself. Omarchy 4’s **LUKS2 + btrfs** root (2026-08-19)
+  stayed ~8 ms `fdatasync`. Do not install **ext4 on dm-crypt** here.
+  Note:
+  [`../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](../source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
 - Stock Arch kernels may **lack** CachyOS `apple_gmux.force_igd`.
   Without that plus the DDI poke, Omarchy never sees 2880×1800. After
   an Omarchy userspace exists, `recreate-desktop.sh omarchy` then

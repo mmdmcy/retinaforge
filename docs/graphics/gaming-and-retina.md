@@ -17,26 +17,38 @@ help **pro GPU jobs** (timeline effects, filters, some CAD/OpenCL). The
 13-inch Retina often had no NVIDIA. Boot Camp / Steam-on-Mac were side
 doors, not the product.
 
-Omarchy/Hyprland would look **good on this panel for the same reason**
-the resolution exists: dense UI. Hyprland on this lid is already
-proven. That is still not a reason to run the stock Omarchy ISO against
-the internal SSD. Install cook-book: [`omarchy.md`](omarchy.md).
+Omarchy 4 is the **daily Linux** on this chassis (stock nouveau lid,
+2880×1800). That is still not a reason to run the stock ISO as a
+**whole-disk** wipe. Keep macOS. Cook-book:
+[`omarchy.md`](omarchy.md),
+[`../source-notes/2026-08-19-omarchy-daily.md`](../source-notes/2026-08-19-omarchy-daily.md).
 
-## How 3D actually works on the Linux daily boot
+## How 3D works on the accepted Omarchy boot (2026-08-19)
 
-Intel Iris Pro owns the lid (`i915drmfb`). The unused 750M can **render**
-one **OpenGL** process (`DRI_PRIME=1`) without moving the GMUX. The tray
-plate’s **Run on 750M** does that; you do not memorize `prime-run`.
+The GT 750M **owns the lid** (`nouveaudrmfb`, mux `DIS:+`). Native
+**OpenGL** uses Mesa nouveau on that chip. Do **not** use `DRI_PRIME=1`
+/ tray **Run on 750M** — those were for an Intel-owned panel.
+
+Stock image: Mesa nouveau GL is present; **no** `vulkan-nouveau` ICD.
+Intel HasVK exists on the iGPU but is not a 2026 Proton/Vulkan gaming
+stack. Proprietary nvidia 470 left with CachyOS. Lower in-game
+resolution to 1920×1200 or 1440×900.
+
+## How 3D worked on the CachyOS Intel-lid boot (archived)
+
+Intel Iris Pro owned the lid (`i915drmfb`). The unused 750M could
+**render** one **OpenGL** process (`DRI_PRIME=1`) without moving the
+GMUX. The tray plate’s **Run on 750M** did that.
 
 That is *like* macOS using the 750M for 3D. It is **not** Automatic
 Graphics Switching. Apple often moved the **panel cable**. Linux must
 not send `IGD`/`DIS` from a running desktop.
 
-Vulkan (most Proton/Windows Steam titles, CS2, current Dota 2) stays on
-**Iris Pro** on this boot. NVIDIA 470 Vulkan/CUDA is a **different
+Vulkan (most Proton/Windows Steam titles, CS2, current Dota 2) stayed on
+**Iris Pro** on that boot. NVIDIA 470 Vulkan/CUDA was a **different
 Limine entry**, not the plate.
 
-## Native OpenGL titles that fit “Run on 750M”
+## Native OpenGL titles (750M / nouveau)
 
 Expect 2013 laptop performance. Turn the in-game resolution down.
 
@@ -54,7 +66,7 @@ OpenGL).
 
 If the Linux build is from that era and the renderer is OpenGL, it is a
 candidate. If it is Windows-only / Proton / Vulkan / anti-cheat, it is
-not this button.
+not this path.
 
 ## Popular titles that are not this button
 

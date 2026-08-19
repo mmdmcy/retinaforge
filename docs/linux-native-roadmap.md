@@ -1,8 +1,12 @@
 # Native Linux Roadmap On The Original SSD
 
-Status: active investigation. The original `APPLE SSD SM1024F` remains in the
-MacBook; replacing it, weakening durability semantics, and installing Linux
-internally before the storage mechanism is understood are out of scope.
+Status: active investigation of the AHCI `FLUSH_EXT` / `ci_held` path. The
+original `APPLE SSD SM1024F` remains in the MacBook. Replacing it,
+weakening durability semantics, or putting **ext4 on dm-crypt** are out
+of scope. A daily internal Linux root **does** exist as of 2026-08-19
+(Omarchy 4, **LUKS2 + btrfs**); userspace durable sync on that volume
+stayed millisecond-class. That is a filesystem-on-crypt result, not an
+AHCI production patch.
 
 ## Goal
 
@@ -17,10 +21,11 @@ acceptance gates. Passing one does not imply the other passes.
 | Area | Established fact | Current conclusion |
 | --- | --- | --- |
 | macOS reference | Big Sur strict `F_FULLFSYNC` completed in 6.9-13.1 ms on the original SSD | The hardware has a fast strict-persistence path. |
-| Linux legacy-INTx | Authenticated Linux `v7.1.3` was stable but reproduced roughly 1.1-second flush tails during the heavier ext4 and dm-crypt workload | Stable is not fast enough for a daily Linux root volume. |
+| Linux legacy-INTx | Authenticated Linux `v7.1.3` was stable but reproduced ~1.1 s `fdatasync` tails when **ext4 ran on dm-crypt**. Plain ext4 and dm-crypt-raw stayed ~10–19 ms. | Do not put ext4 on dm-crypt on this SSD. |
+| Linux LUKS2+btrfs (Omarchy 4, 2026-08-19) | Same SSD, LUKS2 + btrfs zstd/`ssd`/`noatime`, kernel 7.1.8: 64×1 MiB `fdatasync` median **8.4 ms**, max 15 ms, 0 long tails (userspace; no new `FLUSH_EXT` trace). | Encrypted **btrfs** is an acceptable daily root here. Skip-LUKS is no longer required for usable sync. Note: [`docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](source-notes/2026-08-19-omarchy-luks-btrfs-sync.md). |
 | Linux MSI plus NCQ | Bounded reads passed, but writable queue-depth-32 testing produced three timeout/reset waves | Preserve the upstream no-MSI rule for writable NCQ. |
 | Windows graphics probe | Apple Set OS exposed Iris Pro and started the Intel driver, but NVIDIA retained the panel | The Intel GPU is firmware-accessible; this does not prove panel routing or rail-off. |
-| Linux graphics | Repeatable Intel panel (2026-08-16): `force_igd` plus a pre-i915 `DDI_A_4_LANES` poke yields `i915drmfb` 2880×1800. Plasma Wayland (2026-08-17, `KWIN_DRM_NO_AMS=1`) and Hyprland 0.56 (same evening, `AQ_NO_ATOMIC=1`, Command = Super) both sit on that lid. NVIDIA LTS remains SSH recovery only. | Linux is the chosen non-macOS graphics route. Keep the discrete Limine entry for recovery; do not copy Big Sur AGS. Recreate: `docs/graphics/recreate.md`. Omarchy is a port (`docs/graphics/omarchy.md`), not a stock ISO wipe. |
+| Linux graphics | Repeatable Intel panel on **CachyOS** (2026-08-16): `force_igd` plus a pre-i915 `DDI_A_4_LANES` poke yields `i915drmfb` 2880×1800. **Accepted daily (2026-08-19):** stock Omarchy 4, nouveau lid 2880×1800, Hyprland 0.56. Do not port Intel. | Daily: `docs/source-notes/2026-08-19-omarchy-daily.md`. Intel recipe archived in `docs/graphics/intel-first-repro.md`. Do not copy Big Sur AGS. |
 
 ## Existing Assets
 
@@ -132,7 +137,10 @@ rail-off before the GMUX handler and GPU/HDA driver sequence prove it.
 - Any reset, ATA timeout, filesystem warning, unverified firmware write, or
   graphics regression stops that branch and returns to Big Sur.
 - A persistent internal Linux install is considered only after strict storage,
-  Intel panel, and recovery gates pass independently.
+  Intel panel, and recovery gates pass independently. Dated exception:
+  Omarchy 4 LUKS2+btrfs is the current daily Linux root (2026-08-19
+  userspace evidence). Do not panic-reinstall to drop LUKS. The AHCI
+  `FLUSH_EXT` mechanism remains open.
 
 ## Near-Term Order
 

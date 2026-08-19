@@ -5,9 +5,10 @@ the same stack to **Debian** — without replaying the lab. Hardware is
 Late-2013 15-inch `MacBookPro11,3`: Iris Pro `8086:0d26` + GT 750M
 `10de:0fe9` + indexed Apple GMUX 4.0.8.
 
-Keep **macOS** on APFS. Shrink APFS only from macOS. Skip LUKS on this
-SSD. Do not run a dedicated-drive installer against the internal Apple
-disk.
+Keep **macOS** on APFS. Shrink APFS only from macOS. On this SSD prefer
+**btrfs (or plain ext4)**, not **ext4-on-dm-crypt**. LUKS2+btrfs is
+fine (2026-08-19). Do not run a dedicated-drive installer against the
+internal Apple disk.
 
 Verified on this workbench:
 
@@ -17,6 +18,8 @@ Verified on this workbench:
 | Desk power (750M stays on for HDMI/TB) | 2026-08-17 |
 | Plasma Wayland on Iris Pro | 2026-08-17 |
 | Hyprland 0.56 on Iris Pro (Command = Super) | 2026-08-17 |
+| Omarchy 4 LUKS2+btrfs userspace `fdatasync` ~8 ms | 2026-08-19 |
+| Omarchy 4 stock nouveau lid 2880×1800 (accepted daily) | 2026-08-19 |
 
 ## Layers (order matters)
 

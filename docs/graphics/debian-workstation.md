@@ -9,9 +9,9 @@ shortcut — the lid recipe still has to be ported. The desk power profile
 The one ordered cook-book (CachyOS *and* Debian) is
 [`recreate.md`](recreate.md). This page is the Debian-shaped checklist.
 
-Keep **macOS** on APFS. Shrink APFS only from macOS. Skip LUKS on this
-SSD. Do not run a dedicated-drive installer against the internal Apple
-SSD.
+Keep **macOS** on APFS. Shrink APFS only from macOS. On this SSD prefer
+**btrfs on LUKS2** (or plain ext4), not **ext4-on-dm-crypt**. Do not run
+a dedicated-drive installer against the internal Apple SSD.
 
 ## Two layers (both required)
 

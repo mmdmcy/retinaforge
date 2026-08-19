@@ -79,3 +79,9 @@ From `captures/2026-07-30-darwin-flush-pattern/` (private):
 
 Darwin did **not** enter the ~1.1 s mode. Next step is a Linux sustained
 write+`fdatasync` mirror on the scratch partition, not more Darwin probing.
+
+## Later userspace check (2026-08-19)
+
+Omarchy 4 LUKS2+btrfs home, 64×1 MiB `fdatasync`: median 8.4 ms, max
+15 ms, 0 long tails. Same SSD. Not a new AHCI capture.
+[`source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).

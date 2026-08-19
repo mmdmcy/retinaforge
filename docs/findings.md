@@ -1,6 +1,6 @@
 # Public Technical Findings
 
-Last updated: 2026-08-01
+Last updated: 2026-08-19
 
 This document contains the sanitized engineering record suitable for public
 review. Raw traces, serial numbers, UUIDs, network details, private operational
@@ -12,7 +12,9 @@ notes, proprietary binaries, and conversation history are intentionally absent.
 - Storage controller: Apple/Samsung PCIe AHCI, PCI ID `144d:1600`.
 - SSD: `APPLE SSD SM1024F`, firmware `UXM6JA1Q`.
 - Linux baseline: Ubuntu 24.04 / Linux Mint kernel `6.8.0-134-generic`.
-- Linux root during testing: LUKS2 -> LVM -> ext4.
+- Linux root during 2026-07 testing: LUKS2 -> LVM -> ext4 (the ~1.1 s tax).
+- Linux daily root as of 2026-08-19: Omarchy 4, LUKS2 -> btrfs (userspace
+  `fdatasync` stayed ~8 ms). Do not recreate the first stack on this SSD.
 
 The controller used Linux's existing no-MSI quirk and legacy INTx. SMART data
 was clean, the SATA link negotiated at 6 Gb/s over PCIe 5 GT/s x4, and the
@@ -322,10 +324,12 @@ observation bug. The AHCI command slot remains issued for essentially the whole
 interval. Combined with Big Sur's millisecond-class `F_FULLFSYNC`, this points
 at a Linux-versus-Darwin command-pattern or firmware-path difference under
 sustained filesystem flush load, not a simple INTx completion fix and not media
-failure. A normal Mint or Arch install on stock AHCI can boot and stay
-error-free, but should expect the same slow flush tails under durable write
-pressure. Do not treat a newer distro kernel alone as a cure unless it changes
-that path with evidence.
+failure. A normal Mint or Arch **ext4-on-dm-crypt** install on stock AHCI can boot
+and stay error-free, but should expect the same slow flush tails under
+durable write pressure. **btrfs on LUKS2** (Omarchy 4 default root on
+this chassis, 2026-08-19) did not enter that userspace tax. Do not treat
+a newer distro kernel alone as a `FLUSH_EXT` cure unless it changes that
+path with evidence.
 
 Further work follows
 [`flush-pattern-comparison.md`](flush-pattern-comparison.md). Linux baseline
@@ -361,6 +365,11 @@ Physical flush-reg boot with a sustained phase before the stack
 | sustained darwin-mirror (64×1 MiB, plain ext4) | 18.795 ms | 19.418 ms | 19.544 ms | 0 |
 | plain-ext4 stack probe (12×1 MiB) | 17.851 ms | 18.849 ms | 18.849 ms | 0 |
 | dm-crypt+ext4 stack probe (12×1 MiB) | 1.150 s | 1.182 s | 1.182 s | all measured samples long |
+| Omarchy LUKS2+btrfs (64×1 MiB, 2026-08-19) | 8.4 ms | — | 15 ms | 0 |
+
+The last row is a later userspace check on the daily Omarchy home
+volume, not part of the 2026-07-30 flush-reg capture. Full note:
+[`source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
 
 The simple Darwin-like write+durable-sync pattern on plain ext4 is already
 millisecond-class on this SSD under Linux (~19 ms). The ~1.1 s `ci_held` tax
@@ -384,6 +393,21 @@ dm-crypt**, not from the crypt mapper path by itself. Long `ci_held` flushes
 remain overall (`33` this run), but none fell inside the dmcrypt-raw measured
 window. Next: isolate ext4-on-crypt behavior (journal/barrier/flush
 amplification through the mapper), not another raw-crypt reproof.
+
+### LUKS2 + btrfs daily root (2026-08-19)
+
+Omarchy 4.0 on this same SSD applied LUKS2 by installer default. The
+filesystem on the mapper is **btrfs** (`compress=zstd:3,ssd,noatime`),
+kernel `7.1.8-arch1-3`, still the upstream no-MSI quirk. A 1 MiB
+write+`fdatasync` probe on the home subvolume (12 then 64 samples) stayed
+millisecond-class: median **8.4 ms**, max **15 ms**, **zero** samples
+≥100 ms. That matches dm-crypt-raw and plain ext4, not ext4-on-crypt.
+
+The working recipe is therefore **btrfs on LUKS2**, not “never encrypt.”
+Do not put ext4 on dm-crypt here. This was userspace only (no new
+`FLUSH_EXT` trace). Full note:
+[`source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
+Probe: `tools/linux-fdatasync-probe.py`.
 
 ## Related `MacBookPro11,3` Graphics Work
 

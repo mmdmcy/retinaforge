@@ -1,6 +1,29 @@
 # Next Session Handoff
 
-Last updated: 2026-08-17 — **Hyprland 0.56 on the Intel lid; Omarchy is a port**
+Last updated: 2026-08-19 — **Omarchy 4 is the accepted daily Linux; leave it stock**
+
+## Session wrap (2026-08-19, evening)
+
+**Verdict:** stock Omarchy 4 is the end of the Linux-desktop journey on
+this chassis. Do **not** port Intel. Do **not** run RetinaForge
+graphics installers. Do **not** mux-hop. Do **not** reinstall to drop
+LUKS.
+
+Public wrap-up (no hostnames/IPs/keys/SSIDs):
+`docs/source-notes/2026-08-19-omarchy-daily.md`.
+
+Stock installer applied **LUKS2 + btrfs**. 64×1 MiB `fdatasync` on
+`$HOME` (mapper, not tmpfs): median **8.4 ms**, max **15 ms**, **0**
+samples ≥100 ms. The ~1.1 s tax remains **ext4-on-dm-crypt**. Probe:
+`tools/linux-fdatasync-probe.py`.
+
+Lid: **nouveau** / `DIS:+`, 2880×1800, Hyprland 0.56. Wifi: `wl` on
+BCM4360. Idle package ~60 °C is normal here. Games: native OpenGL on
+the 750M (no `DRI_PRIME`). Intel `force_igd` recipe stays documented
+and unused.
+
+Keep macOS. Never “whole disk.” CachyOS is gone; Option-boot macOS is
+local display recovery.
 
 ## Session wrap (2026-08-17, night)
 
@@ -9,9 +32,9 @@ Intel UKI lid. Hyprland overlay was three removed hyprlang keys
 (`tap`, `vfr`, `pseudotile`); `verify-config` → `config ok` after
 reload. Command = Super (`swap_opt_cmd=0`).
 
-**Omarchy next:** do not stock-ISO wipe the internal SSD. Skip LUKS.
-Keep macOS. Stock Arch kernels likely lack `force_igd`. After an
-Omarchy root exists: `recreate-desktop.sh omarchy`, then last line of
+**Omarchy next (still open):** do not stock-ISO wipe the internal SSD.
+Keep macOS. Stock Arch kernels likely lack `force_igd`. After you
+choose to port the lid: `recreate-desktop.sh omarchy`, then last line of
 `~/.config/hypr/hyprland.lua`:
 `dofile("/usr/local/share/retinaforge/hyprland-retinaforge.lua")`.
 Do not `source` the `.conf`. Do not run `enable-wayland-intel.sh` on
@@ -81,31 +104,39 @@ publishable files.
 
 | Part | Role |
 | --- | --- |
-| sda1 | Apple EFI |
-| sda2 | macOS APFS (preserve as recovery reference) |
-| sda3 | Linux ESP / bootloader |
-| sda4 | Linux root (ext4; currently CachyOS) |
+| sda1 | Apple EFI (~200 MiB vfat) — macOS only, not Linux `/boot` |
+| sda2 | macOS APFS **~75 GiB** (shrunk 2026-08-19; ~45 GB used) |
+| sda3 | Omarchy 2 GiB vfat `/boot` (`boot`+`esp`) |
+| sda4 | Omarchy **~855 GiB LUKS2** → btrfs (`@` `/`, `@home`, `@log`) |
 
-Dual-boot remains. Do not shrink APFS or grow Linux without an explicit
-user-present checkpoint and current backup policy.
+CachyOS EFI + root were deleted 2026-08-19. A copy of the old Intel UKI
+lives on the Mac APFS data volume (not in git).
+
+Swap is **zram**, not a disk partition. Never “whole disk.” Daily:
+`docs/source-notes/2026-08-19-omarchy-daily.md`. Storage:
+`docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`.
 
 ## Storage track
 
 Flush-pattern / AHCI diagnostic tooling is in-tree:
 
 - `docs/flush-pattern-comparison.md`
+- `docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md` (userspace
+  LUKS2+btrfs result; not an AHCI patch)
 - `patches/0002-ahci-mbp11-3-flush-reg-sample.patch`
 - related `scripts/` and `tools/` probes and summarizers
+  (`tools/linux-fdatasync-probe.py` for the daily-root check)
 
 Do not reopen physical storage boots without a fresh user-present checkpoint.
 Writable MSI+NCQ remains forbidden.
 
 ## Primary goal
 
-**Intel i915 desktop on the internal Retina panel** — daily driver target for
-this lab. Discrete/NVIDIA paths exist only as **emergency SSH recovery** when
-Intel work bricks the local display; they are not the product goal and agents
-must not steer the user toward them unless explicitly asked.
+**Stock Omarchy 4 on this chassis** — accepted daily Linux (2026-08-19).
+Do not port Intel. Do not treat NVIDIA/nouveau as a problem to fix.
+Historical Intel `i915` panel work stays in `docs/graphics/` as an
+archived recipe. Agents must not start `force_igd` / DDI / mux hops
+unless explicitly asked.
 
 ## Known-good emergency recovery (not the goal)
 

@@ -198,8 +198,8 @@ Required on any reinstall:
 ISO against the internal SSD as a dedicated-drive wipe. Quattro’s “Free
 space” dual-boot is documented for Windows-style leftover space; shrink
 **APFS from macOS**, never from Linux. Keep a macOS partition (recovery
-when the lid goes black). Skip LUKS on this SSD. Port `force_igd` + DDI
-poke; then `dofile` the Lua hardware pin. Written down:
+when the lid goes black). Prefer **btrfs on LUKS2**, not ext4-on-dm-crypt.
+Port `force_igd` + DDI poke; then `dofile` the Lua hardware pin. Written down:
 [`omarchy.md`](omarchy.md),
 [`max-value-and-omarchy.md`](max-value-and-omarchy.md).
 

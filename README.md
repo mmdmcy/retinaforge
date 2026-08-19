@@ -23,8 +23,8 @@ Results must not be generalized to every 2013 MacBook Pro, every
 | Track | Status | Where |
 | --- | --- | --- |
 | Native Big Sur workstation | Working baseline | [`macos/`](macos/README.md) |
-| Linux AHCI / SM1024F storage latency | Active investigation, no safe production fix | sections below plus `docs/`, `scripts/`, `patches/`, `tools/` |
-| Linux Intel-first graphics / GMUX | **Working (2026-08-16)** — `force_igd` + DDI A 4-lane poke gives `i915drmfb` and 2880×1800; NVIDIA LTS stays a Limine recovery entry. Big Sur–style switching is not a Linux target on this mux. | [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/graphics/why-not-macos-ags.md`](docs/graphics/why-not-macos-ags.md), [`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md) |
+| Linux AHCI / SM1024F storage latency | AHCI `FLUSH_EXT` still open; **daily root is LUKS2+btrfs** (2026-08-19 userspace `fdatasync` ~8 ms). Do not use ext4-on-dm-crypt. | `docs/findings.md`, [`docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md), `docs/`, `scripts/`, `patches/`, `tools/` |
+| Linux Intel-first graphics / GMUX | **Proven on CachyOS (2026-08-16)** — `force_igd` + DDI A 4-lane poke gives `i915drmfb` 2880×1800. **Not the daily boot.** Daily Linux is **stock Omarchy 4 / nouveau lid** (2026-08-19). Do not port Intel. Big Sur–style switching is not a Linux target on this mux. | Daily: [`docs/source-notes/2026-08-19-omarchy-daily.md`](docs/source-notes/2026-08-19-omarchy-daily.md), [`docs/graphics/omarchy.md`](docs/graphics/omarchy.md). Archived Intel: [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md), [`docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md`](docs/source-notes/2026-08-16-hsw-ddi-a-4-lanes.md) |
 | Linux tray plate (`MacBookPro11,3`) | Tray jewel + plate: Intel lid status, sleep/wake/run-on-750M (`OFF`/`ON` + `DRI_PRIME=1`; no mux hops). | [`apps/mbp-panel/`](apps/mbp-panel/README.md), [`docs/graphics/max-value-and-omarchy.md`](docs/graphics/max-value-and-omarchy.md), [`docs/graphics/gaming-and-retina.md`](docs/graphics/gaming-and-retina.md) |
 | Windows Intel-first / GMUX | Archived evidence; no further implementation work | [`docs/archive/windows/`](docs/archive/windows/README.md) |
 
@@ -60,23 +60,26 @@ to upstream Go source under Go's own BSD-style license.
 An open, reproducible investigation of severe Linux write-latency stalls on the
 exact `MacBookPro11,3` + `APPLE SSD SM1024F` combination above.
 
-This is an investigation, not a completed solution. No safe production Linux
-fix has been confirmed.
+There is still **no AHCI / `FLUSH CACHE EXT` production patch**. There
+**is** a recreatable daily-root stack: **btrfs on LUKS2** stayed
+millisecond-class under a Darwin-mirror `fdatasync` probe (2026-08-19).
+The ~1.1 s tax is **ext4 on dm-crypt**. Do not skip LUKS as a hard
+rule, and do not put ext4 on the mapper.
+
+Note:
+[`docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md`](docs/source-notes/2026-08-19-omarchy-luks-btrfs-sync.md).
 
 The project starts with Ubuntu and Linux Mint because they provide a stable
 kernel and packaging baseline. Debian, Fedora, and Arch can use the same
 reproduction and validation harness later; changing distributions alone is not
 assumed to change the underlying `ahci` driver path.
 
-Project status on 2026-07-30: the Windows GMUX route is archived and native
-Linux is the active route. The test Mac retains Big Sur `11.7.11`; its Windows
-partitions were removed and APFS was expanded, and no custom Linux kernel is
-installed internally. Two clean builds of the tightened stock legacy-INTx
-command-trace appliance were byte-identical and passed host validation. The
-128 GB lab medium now contains that appliance on its FAT lab partition, with an
-APFS data partition preserved separately. It is not macOS recovery or a normal
-Linux installer and must not be booted casually. No disposable internal scratch
-partition exists, so no physical Linux test has run.
+Project status on 2026-08-19: **Omarchy 4 is the accepted internal Linux
+daily** (LUKS2 + btrfs, 2 GiB `/boot` ESP, zram, stock **nouveau** lid
+at 2880×1800). Do not port `force_igd`. Userspace durable sync on that
+home volume stayed ~8 ms. Big Sur remains on a shrunk APFS slice. The
+2026-07-30 appliance/USB work below remains the AHCI capture harness;
+do not treat the Omarchy install as that trace.
 See [`docs/linux-native-roadmap.md`](docs/linux-native-roadmap.md) for the
 storage and graphics gates. For continuation on another host, start with the
 [session handoff](docs/session-handoff.md).
@@ -96,9 +99,10 @@ later be evaluated on separately identified affected machines:
 
 The first Apple/Samsung controller exposes a standard AHCI interface. Linux
 6.8 testing produced roughly 0.8-10 second durability stalls; authenticated
-upstream Linux 7.1.3 is materially better in a light raw probe, but a sustained
-filesystem workload still produces repeated roughly 1.1-second flush tails
-under the stock legacy-INTx quirk. Generic SMART health remains clean, ordinary
+upstream Linux 7.1.3 is materially better in a light raw probe, but an
+**ext4-on-dm-crypt** workload still produces repeated roughly 1.1-second
+flush tails under the stock legacy-INTx quirk. **btrfs on LUKS2** did
+not show that userspace tax (2026-08-19). Generic SMART health remains clean, ordinary
 data writes are fast, and that legacy path records no ATA timeout or reset.
 Big Sur completes strict `F_FULLFSYNC` in milliseconds on the same SSD, so the
 missing cross-OS difference remains an active investigation.
@@ -128,6 +132,9 @@ as a fix until it demonstrates a different result.
 - `docs/experiment-plan.md` — the staged validation and patch plan.
 - `docs/findings.md` — public technical findings, measurements, negative
   results, and the strict macOS discriminator result.
+- `tools/linux-fdatasync-probe.py` — 1 MiB write + `fdatasync`/`fsync`
+  on a real directory (not tmpfs). Used for the 2026-08-19 LUKS2+btrfs
+  check.
 - `docs/macos-fullfsync-test.md` — the decisive macOS benchmark procedure.
 - `docs/linux-driver-upstream-roadmap.md` — local-fix-first driver development,
   validation, authorship, and upstream submission plan.
@@ -190,8 +197,12 @@ therefore fast on macOS, reopening a narrow Linux AHCI/libata investigation.
 
 The authenticated Linux `7.1.3` appliance completed its physical stock-kernel
 baseline, confirming legacy INTx on the real controller. A light raw
-legacy-INTx write/flush probe passed, but the heavier ext4 and dm-crypt stack
-workload exposed repeated roughly 1.1-second flush tails without ATA faults.
+legacy-INTx write/flush probe passed, but the heavier **ext4-on-dm-crypt**
+stack exposed repeated roughly 1.1-second flush tails without ATA faults.
+**btrfs on LUKS2** (Omarchy 4 daily root, 2026-08-19) did not enter that
+userspace tax (64×1 MiB `fdatasync` median 8.4 ms). That does not close
+the AHCI `FLUSH_EXT` investigation.
+
 The modified read-only MSI stages passed with non-NCQ and with bounded NCQ
 reads, but the MSI-plus-NCQ filesystem-write stage failed with queued-write
 timeouts and link resets. This validates the existing upstream no-MSI quirk
@@ -208,10 +219,14 @@ physical run remain separate user-present checkpoints.
 
 ## Linux Graphics Notes
 
-Intel-first internal panel ownership is **repeatable** on this `MacBookPro11,3`
-(2026-08-16): EFI-stub/UKI boot so `apple_set_os()` runs, `apple_gmux.force_igd=1`
-switches the mux to IGD, then a pre-i915 `DDI_A_4_LANES` poke lets i915 own
-eDP 2880×1800 (`i915drmfb`). NVIDIA LTS remains a Limine recovery entry.
+**Daily (2026-08-19):** stock Omarchy 4, Hyprland, **nouveau** owns the
+internal panel at 2880×1800. Leave that boot. Wrap-up:
+[`docs/source-notes/2026-08-19-omarchy-daily.md`](docs/source-notes/2026-08-19-omarchy-daily.md).
+
+Intel-first panel ownership is **repeatable** on this `MacBookPro11,3`
+(CachyOS, 2026-08-16) but is **not** the accepted daily: EFI-stub/UKI,
+`apple_gmux.force_igd=1`, then a pre-i915 `DDI_A_4_LANES` poke. Do not
+port that onto Omarchy unless explicitly asked.
 
 - [`docs/graphics/intel-first-repro.md`](docs/graphics/intel-first-repro.md)
 - [`docs/graphics/README.md`](docs/graphics/README.md)
